@@ -1,6 +1,4 @@
-
-person -> !age is 50.0
-
-person -> age is 10.0
-
-person -> age?
+x is 10
+x?
+x is 15
+x?
