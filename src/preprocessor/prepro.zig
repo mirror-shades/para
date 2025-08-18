@@ -381,6 +381,20 @@ pub const Preprocessor = struct {
         return current_scope;
     }
 
+    // Recursively search for a variable by name in the given scope and its nested scopes
+    fn findVariableByName(self: *Preprocessor, scope: *Scope, name: []const u8) ?Variable {
+        if (scope.variables.get(name)) |var_ptr| {
+            return var_ptr;
+        }
+        var it = scope.nested_scopes.iterator();
+        while (it.next()) |entry| {
+            if (self.findVariableByName(entry.value_ptr.*, name)) |found| {
+                return found;
+            }
+        }
+        return null;
+    }
+
     // Assigns a value using the assignment array
     pub fn assignValue(self: *Preprocessor, assignment_array: []Variable) !void {
         if (assignment_array.len < 2) return error.InvalidAssignment;
@@ -523,13 +537,9 @@ pub const Preprocessor = struct {
                 .TKN_LOOKUP => {
                     // Look up the variable value and push onto the stack
                     var found = false;
-                    var it = self.root_scope.variables.iterator();
-                    while (it.next()) |entry| {
-                        if (std.mem.eql(u8, entry.key_ptr.*, token.literal)) {
-                            result_stack.append(entry.value_ptr.*.value) catch unreachable;
-                            found = true;
-                            break;
-                        }
+                    if (self.findVariableByName(&self.root_scope, token.literal)) |resolved| {
+                        result_stack.append(resolved.value) catch unreachable;
+                        found = true;
                     }
 
                     if (!found) {

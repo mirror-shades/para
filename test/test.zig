@@ -5,12 +5,12 @@ const process = std.process;
 const fs = std.fs;
 const printf = std.debug.print;
 
+// update this when adding tests
+const TEST_TOTAL = 4;
+
 fn print(comptime format: []const u8) void {
     printf(format, .{});
 }
-
-// update this when adding tests
-const TEST_TOTAL = 3;
 
 fn dirHasFile(dir: fs.Dir, name: []const u8) bool {
     if (dir.access(name, .{})) |_| {
@@ -186,7 +186,7 @@ const TestRunner = struct {
         self.total_tests += 1;
         const test_start = std.time.milliTimestamp();
 
-        printf("[{d}/{d}] Running: {s}... \t", .{ self.total_tests, 3, name }); // Update 3 to total when you know it
+        printf("[{d}/{d}] Running: {s}... \t", .{ self.total_tests, TEST_TOTAL, name }); // Update 3 to total when you know it
 
         const result = test_fn(self.allocator);
         const duration = @as(u64, @intCast(std.time.milliTimestamp() - test_start));
@@ -313,6 +313,41 @@ fn testBigFile(allocator: std.mem.Allocator) !void {
     try testing.expectEqualStrings("5", outputs.items[6].value);
 }
 
+fn testSugar(allocator: std.mem.Allocator) !void {
+    const output = try runParaCommand(allocator, "./test/build-checks/sugar.para");
+    defer allocator.free(output);
+
+    const outputs = try parseOutput(output, allocator);
+
+    try testing.expectEqualStrings("raise", outputs.items[0].name);
+    try testing.expectEqualStrings("int", outputs.items[0].type);
+    try testing.expectEqualStrings("500", outputs.items[0].value);
+
+    try testing.expectEqualStrings("man", outputs.items[1].name);
+    try testing.expectEqualStrings("string", outputs.items[1].type);
+    try testing.expectEqualStrings("\"Bob\"", outputs.items[1].value);
+
+    try testing.expectEqualStrings("person-> age", outputs.items[2].name);
+    try testing.expectEqualStrings("int", outputs.items[2].type);
+    try testing.expectEqualStrings("50", outputs.items[2].value);
+
+    try testing.expectEqualStrings("person-> retirement", outputs.items[3].name);
+    try testing.expectEqualStrings("int", outputs.items[3].type);
+    try testing.expectEqualStrings("70", outputs.items[3].value);
+
+    try testing.expectEqualStrings("person-> name", outputs.items[4].name);
+    try testing.expectEqualStrings("string", outputs.items[4].type);
+    try testing.expectEqualStrings("\"Bob\"", outputs.items[4].value);
+
+    try testing.expectEqualStrings("person-> job-> salary", outputs.items[5].name);
+    try testing.expectEqualStrings("int", outputs.items[5].type);
+    try testing.expectEqualStrings("15500", outputs.items[5].value);
+
+    try testing.expectEqualStrings("person-> job-> title", outputs.items[6].name);
+    try testing.expectEqualStrings("string", outputs.items[6].type);
+    try testing.expectEqualStrings("\"Bartender\"", outputs.items[6].value);
+}
+
 // Single test function that Zig will run
 test "para language tests" {
     // Set UTF-8 console output on Windows
@@ -334,6 +369,7 @@ test "para language tests" {
     runner.runTest("Variable Assignment", testBasicVariableAssignment);
     runner.runTest("Group Assignments", testGroupAssignments);
     runner.runTest("Big File Processing", testBigFile);
+    runner.runTest("Sugar Syntax Test", testSugar);
 
     // Generate the report
     runner.generateReport();

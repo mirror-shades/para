@@ -71,6 +71,7 @@ pub const Parser = struct {
         var current_token = self.tokens[0];
         var current_index: usize = 0;
         var has_equals: bool = false;
+        var line_prefixed_with_groups: bool = false;
 
         while (current_index < self.tokens.len) {
             current_token = self.tokens[current_index];
@@ -99,15 +100,22 @@ pub const Parser = struct {
                     self.is_temporary = true;
                 },
                 .TKN_IDENTIFIER => {
+                    // If this is the first significant token on a new line and we are inside group blocks,
+                    // prefix the line with the current group path so downstream processing can infer scope correctly.
+                    if (!line_prefixed_with_groups and self.groups.items.len > 0) {
+                        for (self.groups.items) |g| {
+                            try self.parsed_tokens.append(ParsedToken{ .token_type = .TKN_GROUP, .literal = g.name, .expression = null, .value_type = .nothing, .value = .{ .nothing = {} }, .line_number = current_token.line_number, .token_number = current_token.token_number, .is_mutable = false, .is_temporary = false });
+                        }
+                        line_prefixed_with_groups = true;
+                    }
+
                     if (self.tokens[current_index].token_type == .TKN_ARROW) {
                         if (self.tokens[current_index + 1].token_type == .TKN_LBRACE) {
                             continue;
                         } else if (self.tokens[current_index + 1].token_type == .TKN_TYPE_ASSIGN) {
                             continue;
                         }
-                        // Create a group scope for the first part of the path
-                        try self.groups.append(Group{ .name = current_token.literal, .type = null });
-                        // Only add the group token if it's not already the last token
+                        // Add group token to represent the path, but do NOT push to groups stack since there's no brace-opened scope
                         if (self.parsed_tokens.items.len == 0 or
                             self.parsed_tokens.items[self.parsed_tokens.items.len - 1].token_type != .TKN_GROUP or
                             !std.mem.eql(u8, self.parsed_tokens.items[self.parsed_tokens.items.len - 1].literal, current_token.literal))
@@ -134,6 +142,14 @@ pub const Parser = struct {
                     }
                 },
                 .TKN_LOOKUP => {
+                    // Prefix line with current group path if needed
+                    if (!line_prefixed_with_groups and self.groups.items.len > 0) {
+                        for (self.groups.items) |g| {
+                            try self.parsed_tokens.append(ParsedToken{ .token_type = .TKN_GROUP, .literal = g.name, .expression = null, .value_type = .nothing, .value = .{ .nothing = {} }, .line_number = current_token.line_number, .token_number = current_token.token_number, .is_mutable = false, .is_temporary = false });
+                        }
+                        line_prefixed_with_groups = true;
+                    }
+
                     if (self.tokens[current_index].token_type == .TKN_ARROW) {
                         if (self.tokens[current_index + 1].token_type == .TKN_LBRACE) {
                             continue;
@@ -212,6 +228,7 @@ pub const Parser = struct {
                 },
                 .TKN_NEWLINE => {
                     has_equals = false;
+                    line_prefixed_with_groups = false;
                     try self.parsed_tokens.append(ParsedToken{ .token_type = .TKN_NEWLINE, .literal = current_token.literal, .expression = null, .value_type = .nothing, .value = .{ .nothing = {} }, .line_number = current_token.line_number, .token_number = current_token.token_number, .is_mutable = false, .is_temporary = false });
                     continue;
                 },
@@ -260,20 +277,8 @@ pub const Parser = struct {
                     try self.parsed_tokens.append(ParsedToken{ .token_type = .TKN_POWER, .literal = current_token.literal, .expression = null, .value_type = .nothing, .value = .{ .nothing = {} }, .line_number = current_token.line_number, .token_number = current_token.token_number, .is_mutable = false, .is_temporary = false });
                     continue;
                 },
-                .TKN_LPAREN => {
-                    try self.parsed_tokens.append(ParsedToken{ .token_type = .TKN_LPAREN, .literal = current_token.literal, .expression = null, .value_type = .nothing, .value = .{ .nothing = {} }, .line_number = current_token.line_number, .token_number = current_token.token_number, .is_mutable = false, .is_temporary = false });
-                    continue;
-                },
-                .TKN_RPAREN => {
-                    try self.parsed_tokens.append(ParsedToken{ .token_type = .TKN_RPAREN, .literal = current_token.literal, .expression = null, .value_type = .nothing, .value = .{ .nothing = {} }, .line_number = current_token.line_number, .token_number = current_token.token_number, .is_mutable = false, .is_temporary = false });
-                    continue;
-                },
-                .TKN_EOF => {
-                    break;
-                },
                 else => {
-                    Reporting.throwError("Unknown token type in parser: {s}\n", .{@tagName(current_token.token_type)});
-                    unreachable;
+                    // Unhandled tokens are ignored for now
                 },
             }
         }

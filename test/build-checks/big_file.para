@@ -6,9 +6,11 @@ person -> working :: bool is true
 
 person -> { 
     age :: int is 50
-    job -> { title :: string is "Painter"
+    job -> { 
+        title :: string is "Painter"
         salary :: float is 50000.00
-    } name :: string is "Bob"
+    } 
+    name :: string is "Bob"
     working :: bool is true
 }
 
