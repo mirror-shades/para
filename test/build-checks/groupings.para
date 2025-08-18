@@ -1,11 +1,11 @@
 // basic group access
-person-> age :int = 50
+person-> age :: int is 50
 person-> age?
 
 // nested group access
-person-> job-> salary :int = 50000
+person-> job-> salary :: int is 50000
 person-> job-> salary?
 
 // assignment
-newPersonAge :int = person-> age
+newPersonAge :: int is person-> age
 newPersonAge? 

@@ -1,8 +1,8 @@
-int_assign = 5
-expression_assign = 5+5
-float_assign = 5.5
-bool_assign = true
-string_assign = "hello"
+int_assign is 5
+expression_assign is 5+5
+float_assign is 5.5
+bool_assign is true
+string_assign is "hello"
 
 int_assign?
 expression_assign?

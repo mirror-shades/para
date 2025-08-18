@@ -49,6 +49,9 @@ pub fn main() !void {
             debug_lexer = true;
             debug_parser = true;
             debug_preprocessor = true;
+        } else if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "-help") or std.mem.eql(u8, arg, "--h")) {
+            printUsage(program_name);
+            return;
         } else if (filename == null) {
             filename = arg;
         }
@@ -56,17 +59,12 @@ pub fn main() !void {
 
     // Check if filename was provided
     const file_path = filename orelse {
-        Reporting.throwError("Usage: {s} [options] <file>", .{program_name});
-        Reporting.throwError("Options:", .{});
-        Reporting.throwError("  --debug_lexer        Enable lexer debug output", .{});
-        Reporting.throwError("  --debug_parser       Enable parser debug output", .{});
-        Reporting.throwError("  --debug_preprocessor Enable preprocessor debug output", .{});
-        Reporting.throwError("  --debug              Enable all debug output", .{});
+        printUsage(program_name);
         return;
     };
 
     if (!std.mem.endsWith(u8, file_path, ".para")) {
-        Reporting.throwError("File must have a .para extension", .{});
+        Reporting.throwError("File must have a .para extension\n", .{});
         return;
     }
 
@@ -163,4 +161,14 @@ fn printNode(node: *ast.Node, indent: usize, reporter: *Reporting.Reporter) !voi
             try printNode(child, indent + 1, reporter);
         }
     }
+}
+
+fn printUsage(program_name: []const u8) void {
+    Reporting.log("Usage: {s} [options] <file>\n", .{program_name});
+    Reporting.log("Options:\n", .{});
+    Reporting.log("  --debug_lexer        Enable lexer debug output\n", .{});
+    Reporting.log("  --debug_parser       Enable parser debug output\n", .{});
+    Reporting.log("  --debug_preprocessor Enable preprocessor debug output\n", .{});
+    Reporting.log("  --debug              Enable all debug output\n", .{});
+    std.process.exit(0); // Exit cleanly after printing all help text
 }

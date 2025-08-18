@@ -1,15 +1,15 @@
-person -> age : int = 50
+person -> age :: int is 50
 
 person -> { 
-    retirement : int = 50 + 20
+    retirement :: int is 50 + 20
 }
 
-raise = 500
-man = "Bob" 
+raise is 500
+man is "Bob" 
 
 
-person -> : int {
-    job -> salary = 15000  + raise
-    job -> title : string = "Bartender"
-    name : string = man
+person -> :: int {
+    job -> salary is 15000  + raise
+    job -> title :: string is "Bartender"
+    name :: string is man
 }

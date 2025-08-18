@@ -17,7 +17,7 @@ Para is a minimalist data representation language designed for clear, typed data
 ## Syntax Rules
 
 - Every line starts with an identifier (variable or group).
-- Variables are declared with `:` followed by a type and value.
+- Variables are declared with `::` followed by a type and value.
 - Groups are declared with `->` and contain nested variables or groups.
 - Statements end with a newline or EOF; whitespace and empty lines are ignored.
 - Identifiers must be unique within their scope (e.g., a variable and group cannot share a name).
@@ -32,8 +32,8 @@ Para is a minimalist data representation language designed for clear, typed data
 
 ### Comments
 
-- Single-line: `// This is a comment`
-- Multi-line: `/* This is a multi-line comment */`
+- Single-line:: `// This is a comment`
+- Multi-line:: `/* This is a multi-line comment */`
 
 ## Simple Types
 
@@ -43,52 +43,52 @@ Para has five fixed types, all mutable unless marked constant. Heterogeneous arr
 
 ```para
 // int is an i32
-x : int = 18
+x :: int is 18
 ```
 
 ### Float
 
 ```para
 // float is a f64
-y : float = 3.14
+y :: float is 3.14
 ```
 
 ### String
 
 ```para
 // string is a []u8
-z : string = "hello world"
+z :: string is "hello world"
 ```
 
 ### Boolean
 
 ```para
 // bool is a bool
-logics : bool = true
+logics :: bool is true
 ```
 
 ### Time
 
 ```para
 // time is a i64 but the front end can handle ISO conversion
-created : time = 17453900000
-updated : time = "2024-03-14T16:45:00Z"
+created :: time is 17453900000
+updated :: time is "2024-03-14T16::45::00Z"
 ```
 
 ### Constants
 
 ```para
 // fields can be marked constant
-id : const int = 567
+id :: const int is 567
 ```
 
 ### Nulls
 
 ```para
 // null is a value than can be assigned to any type if permitted
-x : int = null // this errors, must be a nullable type
-x : int? = null // this is correct
-x : const int? = null // this errors because const can't be null
+x :: int is null // this errors, must be a nullable type
+x :: int? is null // this is correct
+x :: const int? is null // this errors because const can't be null
 ```
 
 ## Variable References
@@ -97,8 +97,8 @@ Variables can reference other variables:
 
 ```para
 // internal reference is allowed
-x : int = 5
-nested : int = x
+x :: int is 5
+nested :: int is x
 ```
 
 ## Complex Types
@@ -108,11 +108,11 @@ Para has one complex type called a "group", similar to a struct in other languag
 ### Basic Group Usage
 
 ```para
-person -> age : int = 25
-person -> name : string = "Bob"
+person -> age :: int is 25
+person -> name :: string is "Bob"
 
 // nested groupings are allowed as well
-bigNest -> littleNest -> member1 : int = 5
+bigNest -> littleNest -> member1 :: int is 5
 ```
 
 ### Group Scopes
@@ -123,16 +123,16 @@ Groups can be written using scope syntax for better readability:
 // this
 bigNest -> {
     littleNest -> {
-        member1 : int = 10
+        member1 :: int is 10
     }
-    member2 : int = 2
-    member3 : int = 3
+    member2 :: int is 2
+    member3 :: int is 3
 }
 
 // reduces to
-bigNest -> littleNest -> member1 : int = 10
-bigNest -> member2 : int = 2
-bigNest -> member3 : int = 3
+bigNest -> littleNest -> member1 :: int is 10
+bigNest -> member2 :: int is 2
+bigNest -> member3 :: int is 3
 ```
 
 ### Typed Group Scopes
@@ -141,14 +141,14 @@ Groups can enforce types for their members:
 
 ```para
 // this
-nest -> : int {
-    member1 = 10
-    member2 = 20
+nest -> :: int {
+    member1 is 10
+    member2 is 20
 }
 
 // reduces to
-nest -> member1 : int = 10
-nest -> member2 : int = 20
+nest -> member1 :: int is 10
+nest -> member2 :: int is 20
 ```
 
 ## Preprocessing Steps
@@ -160,25 +160,25 @@ Para files go through several preprocessing steps for flexibility and optimizati
 Configs are flexible - as long as values are initialized before use, they can be referenced:
 
 ```para
-defaults -> age : int = 25
-new_age : int = defaults -> age
-person -> age : int = new_age
-person -> name : string = "Robert"
-nickname : string = "Bob"
-person -> nickname = nickname
+defaults -> age :: int is 25
+new_age :: int is defaults -> age
+person -> age :: int is new_age
+person -> name :: string is "Robert"
+nickname :: string is "Bob"
+person -> nickname is nickname
 ```
 
 ### Step 2: Baked Values
 
-This is the default way Para is used. All values are resolved before runtime:
+This is the minilal level Para can be used. All values are resolved before runtime:
 
 ```para
-defaults -> age : int = 25
-new_age : int = 25
-person -> age : int = 25
-person -> name : string = "Robert"
-nickname : string = "Bob"
-person -> nickname = "Bob"
+defaults -> age :: int is 25
+new_age :: int is 25
+person -> age :: int is 25
+person -> name :: string is "Robert"
+nickname :: string is "Bob"
+person -> nickname is "Bob"
 ```
 
 ### Step 3: Compressed Values
@@ -186,14 +186,14 @@ person -> nickname = "Bob"
 An additional step can be done to compress values. Globals are raised and groups are unified:
 
 ```para
-new_age : int = 25
-nickname : string = "Bob"
+new_age :: int is 25
+nickname :: string is "Bob"
 
-defaults -> age : int = 25
+defaults -> age :: int is 25
 person -> {
-    age : int = 25
-    name : string = "Robert"
-    nickname = "Bob"
+    age :: int is 25
+    name :: string is "Robert"
+    nickname is "Bob"
 }
 ```
 

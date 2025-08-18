@@ -12,14 +12,73 @@ fn print(comptime format: []const u8) void {
 // update this when adding tests
 const TEST_TOTAL = 3;
 
+fn dirHasFile(dir: fs.Dir, name: []const u8) bool {
+    if (dir.access(name, .{})) |_| {
+        return true;
+    } else |_| {
+        return false;
+    }
+}
+
+fn dirHasDir(dir: fs.Dir, name: []const u8) bool {
+    var sub = dir.openDir(name, .{}) catch return false;
+    defer sub.close();
+    return true;
+}
+
+fn findProjectRoot(allocator: std.mem.Allocator) ![]u8 {
+    // Start from current working directory and walk up until we find expected markers
+    const cwd_dir = fs.cwd();
+    var current = try cwd_dir.realpathAlloc(allocator, ".");
+    // We will mutate current by repeatedly trimming the last path component
+    while (true) : ({}) {
+        // Try to open this directory and look for expected files
+        var dir = fs.openDirAbsolute(current, .{ .iterate = true }) catch |err| {
+            // If we cannot open, attempt to go up
+            if (std.fs.path.dirname(current)) |parent| {
+                allocator.free(current);
+                current = try allocator.dupe(u8, parent);
+                continue;
+            } else {
+                return err;
+            }
+        };
+        defer dir.close();
+
+        const has_build = dirHasFile(dir, "build.zig");
+        const has_src_main = dirHasFile(dir, "src/main.zig");
+        const has_test_dir = dirHasDir(dir, "test");
+        if (has_build and has_src_main and has_test_dir) {
+            return current; // caller frees
+        }
+
+        // Move up a directory; stop if there is no parent
+        if (std.fs.path.dirname(current)) |parent| {
+            allocator.free(current);
+            current = try allocator.dupe(u8, parent);
+            continue;
+        } else {
+            return error.ProjectRootNotFound;
+        }
+    }
+}
+
 fn runParaCommand(allocator: std.mem.Allocator, path: []const u8) ![]const u8 {
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
     const child_allocator = arena.allocator();
 
-    // Verify test file exists and print contents
-    const file = fs.cwd().openFile(path, .{}) catch |err| {
-        std.debug.print("Failed to open test file {s}: {}\n", .{ path, err });
+    // Discover project root regardless of runner CWD
+    const project_root = try findProjectRoot(allocator);
+    defer allocator.free(project_root);
+
+    // Verify test file exists and read contents (sanity check)
+    var root_dir = try fs.openDirAbsolute(project_root, .{});
+    defer root_dir.close();
+    const file = root_dir.openFile(path, .{}) catch |err| {
+        const abs_candidate = fs.path.join(allocator, &[_][]const u8{ project_root, path }) catch "";
+        defer if (abs_candidate.len > 0) allocator.free(abs_candidate);
+        std.debug.print("Failed to open test file {s}: {}\n", .{ if (abs_candidate.len > 0) abs_candidate else path, err });
         return error.FileNotFound;
     };
     defer file.close();
@@ -27,12 +86,19 @@ fn runParaCommand(allocator: std.mem.Allocator, path: []const u8) ![]const u8 {
     const file_contents = try file.readToEndAlloc(child_allocator, std.math.maxInt(usize));
     defer child_allocator.free(file_contents);
 
-    // Get the path to the para executable
-    const exe_path = try fs.path.join(allocator, &[_][]const u8{ "zig-out", "bin", "para.exe" });
+    // Build absolute path to the para executable
+    const exe_name = if (builtin.os.tag == .windows) "para.exe" else "para";
+    const exe_rel = try fs.path.join(allocator, &[_][]const u8{ "zig-out", "bin", exe_name });
+    defer allocator.free(exe_rel);
+    const exe_path = try fs.path.join(allocator, &[_][]const u8{ project_root, exe_rel });
     defer allocator.free(exe_path);
 
-    var child = process.Child.init(&[_][]const u8{ exe_path, path }, child_allocator);
-    child.cwd = ".";
+    // Absolute path to input file for the child
+    const input_abs = try fs.path.join(allocator, &[_][]const u8{ project_root, path });
+    defer allocator.free(input_abs);
+
+    var child = process.Child.init(&[_][]const u8{ exe_path, input_abs }, child_allocator);
+    child.cwd = project_root;
     child.stdout_behavior = .Pipe;
     child.stderr_behavior = .Pipe;
 

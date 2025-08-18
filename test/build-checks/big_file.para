@@ -1,29 +1,29 @@
-person -> !age : int = 50
-person -> job -> title : string = "Painter"
-person -> job -> salary : float = 50000.00
-person -> name : string = "Bob"
-person -> working : bool = true
+person -> !age :: int is 50
+person -> job -> title :: string is "Painter"
+person -> job -> salary :: float is 50000.00
+person -> name :: string is "Bob"
+person -> working :: bool is true
 
 person -> { 
-    age : int = 50
-    job -> { title : string = "Painter"
-        salary : float = 50000.00
-    } name : string = "Bob"
-    working : bool = true
+    age :: int is 50
+    job -> { title :: string is "Painter"
+        salary :: float is 50000.00
+    } name :: string is "Bob"
+    working :: bool is true
 }
 
 person -> {
-    age = 50
-    name : string = "Bob"
+    age is 50
+    name :: string is "Bob"
 }
 
-age = 10
-age = 15
+age is 10
+age is 15
 
-newSalary :float = 10000.00 * (4 + 3)
-person -> job -> salary = newSalary
+newSalary :: float is 10000.00 * (4 + 3)
+person -> job -> salary is newSalary
 
-person -> age = 51
+person -> age is 51
 
 person -> age ?
 person -> job -> title ?
@@ -32,7 +32,7 @@ person -> name ?
 person -> working ?
 
 
-y = person -> job -> salary
+y is person -> job -> salary
 y ?
 
 5 ?
