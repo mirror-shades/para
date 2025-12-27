@@ -1,2 +1,0 @@
-temp const age :: int is 10
-person -> const age :: int is age
