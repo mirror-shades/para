@@ -8,7 +8,7 @@ digraph Assignment {
     equal [label="="];
     colon [label=":"];
     arrow [label="->"];
-    flags [label="[!/~]", fillcolor="lightblue", style="filled"];
+    flags [label="[temp] var/const", fillcolor="lightblue", style="filled"];
     value [label="Value"];
     expression [label="Expression"];
     group [label="Group", fillcolor="lightblue", style="filled"];

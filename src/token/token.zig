@@ -19,7 +19,7 @@ pub const ValueType = enum {
 };
 
 pub const Value = union(ValueType) {
-    int: i32,
+    int: i64,
     float: f64,
     string: []const u8,
     bool: bool,
@@ -44,8 +44,10 @@ pub const TokenKind = enum {
     TKN_LBRACKET, // [
     TKN_RBRACKET, // ]
     TKN_COMMA, // ,
-    TKN_MUTABLE, // !
-    TKN_TEMPORARY, // ~
+    TKN_EXCLAIM, // !
+    TKN_VAR, // var keyword
+    TKN_CONST, // const keyword
+    TKN_TEMP, // temp keyword
     TKN_VALUE, // value
     TKN_TYPE, // type
     TKN_GROUP, // group
@@ -77,8 +79,10 @@ pub const TokenKind = enum {
             .TKN_LBRACKET => "TKN_LBRACKET",
             .TKN_RBRACKET => "TKN_RBRACKET",
             .TKN_COMMA => "TKN_COMMA",
-            .TKN_MUTABLE => "TKN_MUTABLE",
-            .TKN_TEMPORARY => "TKN_TEMPORARY",
+            .TKN_EXCLAIM => "TKN_EXCLAIM",
+            .TKN_VAR => "TKN_VAR",
+            .TKN_CONST => "TKN_CONST",
+            .TKN_TEMP => "TKN_TEMP",
             .TKN_TYPE => "TKN_TYPE",
             .TKN_GROUP => "TKN_GROUP",
             .TKN_VALUE => "TKN_VALUE",
@@ -100,13 +104,12 @@ pub const Token = struct {
     token_number: usize,
 };
 
-pub fn makeToken(literal: []const u8, token_type: TokenKind, value_type: ValueType, line_number: usize, token_number: usize, start_pos: usize) Token {
+pub fn makeToken(literal: []const u8, token_type: TokenKind, value_type: ValueType, line_number: usize, token_number: usize) Token {
     return Token{
         .literal = literal,
         .token_type = token_type,
         .value_type = value_type,
         .line_number = line_number,
         .token_number = token_number,
-        .start_pos = start_pos,
     };
 }

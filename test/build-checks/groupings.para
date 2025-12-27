@@ -1,11 +1,11 @@
 // basic group access
-person-> age :: int is 50
+person-> const age :: int is 50
 person-> age?
 
 // nested group access
-person-> job-> salary :: int is 50000
+person-> job-> const salary :: int is 50000
 person-> job-> salary?
 
 // assignment
-newPersonAge :: int is person-> age
+const newPersonAge :: int is person-> age
 newPersonAge? 

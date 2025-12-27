@@ -3,3 +3,4 @@ zig-out/
 build/
 output.png
 graph.dot
+parsing.dot

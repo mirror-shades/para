@@ -6,7 +6,7 @@ const fs = std.fs;
 const printf = std.debug.print;
 
 // update this when adding tests
-const TEST_TOTAL = 4;
+const TEST_TOTAL = 6;
 
 fn print(comptime format: []const u8) void {
     printf(format, .{});
@@ -98,6 +98,44 @@ fn runParaCommand(allocator: std.mem.Allocator, path: []const u8) ![]const u8 {
     defer allocator.free(input_abs);
 
     var child = process.Child.init(&[_][]const u8{ exe_path, input_abs }, child_allocator);
+    child.cwd = project_root;
+    child.stdout_behavior = .Pipe;
+    child.stderr_behavior = .Pipe;
+
+    try child.spawn();
+    const stdout = try child.stdout.?.reader().readAllAlloc(child_allocator, std.math.maxInt(usize));
+    const term = try child.wait();
+
+    if (term.Exited != 0) {
+        return error.CommandFailed;
+    }
+
+    return try allocator.dupe(u8, stdout);
+}
+
+fn runParaJsonCommand(allocator: std.mem.Allocator, path: []const u8) ![]const u8 {
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const child_allocator = arena.allocator();
+
+    const project_root = try findProjectRoot(allocator);
+    defer allocator.free(project_root);
+
+    var root_dir = try fs.openDirAbsolute(project_root, .{});
+    defer root_dir.close();
+    const file = root_dir.openFile(path, .{}) catch return error.FileNotFound;
+    defer file.close();
+
+    const exe_name = if (builtin.os.tag == .windows) "para.exe" else "para";
+    const exe_rel = try fs.path.join(allocator, &[_][]const u8{ "zig-out", "bin", exe_name });
+    defer allocator.free(exe_rel);
+    const exe_path = try fs.path.join(allocator, &[_][]const u8{ project_root, exe_rel });
+    defer allocator.free(exe_path);
+
+    const input_abs = try fs.path.join(allocator, &[_][]const u8{ project_root, path });
+    defer allocator.free(input_abs);
+
+    var child = process.Child.init(&[_][]const u8{ exe_path, "--json", input_abs }, child_allocator);
     child.cwd = project_root;
     child.stdout_behavior = .Pipe;
     child.stderr_behavior = .Pipe;
@@ -348,6 +386,45 @@ fn testSugar(allocator: std.mem.Allocator) !void {
     try testing.expectEqualStrings("\"Bartender\"", outputs.items[6].value);
 }
 
+fn testJsonGroupings(allocator: std.mem.Allocator) !void {
+    const output = try runParaJsonCommand(allocator, "./test/build-checks/groupings.para");
+    defer allocator.free(output);
+
+    // JSON is the last line; split on newline and trim.
+    var it = std.mem.tokenizeAny(u8, output, "\r\n");
+    var last: []const u8 = "";
+    while (it.next()) |line| {
+        if (line.len != 0) last = line;
+    }
+
+    try testing.expect(last.len != 0);
+    try testing.expect(std.mem.startsWith(u8, last, "{\""));
+    try testing.expect(std.mem.indexOf(u8, last, "\"person\"") != null);
+    try testing.expect(std.mem.indexOf(u8, last, "\"newPersonAge\"") != null);
+    try testing.expect(std.mem.indexOf(u8, last, "\"age\":50") != null);
+    try testing.expect(std.mem.indexOf(u8, last, "\"salary\":50000") != null);
+}
+
+fn testJsonBigFile(allocator: std.mem.Allocator) !void {
+    const output = try runParaJsonCommand(allocator, "./test/build-checks/big_file.para");
+    defer allocator.free(output);
+
+    var it = std.mem.tokenizeAny(u8, output, "\r\n");
+    var last: []const u8 = "";
+    while (it.next()) |line| {
+        if (line.len != 0) last = line;
+    }
+
+    try testing.expect(last.len != 0);
+    try testing.expect(std.mem.startsWith(u8, last, "{\""));
+
+    try testing.expect(std.mem.indexOf(u8, last, "\"person\"") != null);
+    try testing.expect(std.mem.indexOf(u8, last, "\"working\":true") != null);
+    try testing.expect(std.mem.indexOf(u8, last, "\"name\":\"Bob\"") != null);
+    try testing.expect(std.mem.indexOf(u8, last, "\"job\"") != null);
+    try testing.expect(std.mem.indexOf(u8, last, "\"title\":\"Painter\"") != null);
+}
+
 // Single test function that Zig will run
 test "para language tests" {
     // Set UTF-8 console output on Windows
@@ -370,6 +447,8 @@ test "para language tests" {
     runner.runTest("Group Assignments", testGroupAssignments);
     runner.runTest("Big File Processing", testBigFile);
     runner.runTest("Sugar Syntax Test", testSugar);
+    runner.runTest("JSON Groupings", testJsonGroupings);
+    runner.runTest("JSON Big File", testJsonBigFile);
 
     // Generate the report
     runner.generateReport();

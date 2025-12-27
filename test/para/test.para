@@ -1,4 +1,4 @@
-x is 10
+var x is 10
 x?
 x is 15
 x?

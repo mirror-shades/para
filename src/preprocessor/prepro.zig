@@ -6,6 +6,7 @@ const TokenKind = TokenImport.TokenKind;
 const ValueType = TokenImport.ValueType;
 const Value = TokenImport.Value;
 const Reporting = @import("../utils/reporting.zig");
+const ir = @import("../ir.zig");
 
 pub const Preprocessor = struct {
     pub const Variable = struct {
@@ -14,6 +15,9 @@ pub const Preprocessor = struct {
         type: ValueType,
         mutable: bool,
         temp: bool,
+        /// Source location for diagnostics
+        line_number: usize,
+        token_number: usize,
     };
 
     pub const Scope = struct {
@@ -42,16 +46,98 @@ pub const Preprocessor = struct {
 
     allocator: std.mem.Allocator,
     root_scope: Scope,
+    // Borrowed view of source lines for diagnostics (from the lexer).
+    source_lines: [][]const u8,
 
     pub fn init(allocator: std.mem.Allocator) Preprocessor {
         return Preprocessor{
             .allocator = allocator,
             .root_scope = Scope.init(allocator),
+            .source_lines = &[_][]const u8{},
         };
+    }
+
+    pub fn setSourceLines(self: *Preprocessor, lines: [][]const u8) void {
+        self.source_lines = lines;
     }
 
     pub fn deinit(self: *Preprocessor) void {
         self.root_scope.deinit();
+    }
+
+    pub fn buildIrProgram(self: *Preprocessor) ir.Program {
+        var program = ir.Program.init(self.allocator);
+
+        // Emit all variables in the root scope as top-level bindings.
+        var var_it = self.root_scope.variables.iterator();
+        while (var_it.next()) |entry| {
+            const variable = entry.value_ptr.*;
+            if (variable.type == .nothing or variable.temp) continue;
+
+            const ir_value = valueToIrValue(self.allocator, variable) catch continue;
+            program.globals.append(.{
+                .name = entry.key_ptr.*,
+                .value = ir_value,
+            }) catch unreachable;
+        }
+
+        // Emit each nested scope as an object at the top level.
+        var scope_it = self.root_scope.nested_scopes.iterator();
+        while (scope_it.next()) |scope_entry| {
+            const scope_name = scope_entry.key_ptr.*;
+            const scope_ptr = scope_entry.value_ptr.*;
+
+            const obj_ptr = scopeToObject(self.allocator, scope_ptr) catch continue;
+            program.globals.append(.{
+                .name = scope_name,
+                .value = ir.Value{ .object = obj_ptr },
+            }) catch unreachable;
+        }
+
+        return program;
+    }
+
+    fn valueToIrValue(allocator: std.mem.Allocator, variable: Variable) !ir.Value {
+        return switch (variable.type) {
+            .int => ir.Value{ .int = variable.value.int },
+            .float => ir.Value{ .float = variable.value.float },
+            .string => ir.Value{ .string = try allocator.dupe(u8, variable.value.string) },
+            .bool => ir.Value{ .bool = variable.value.bool },
+            .nothing => ir.Value{ .null_ = {} },
+        };
+    }
+
+    fn scopeToObject(allocator: std.mem.Allocator, scope: *Scope) !*ir.Object {
+        const obj_ptr = try allocator.create(ir.Object);
+        obj_ptr.* = ir.Object.init(allocator);
+
+        // Add variables as fields.
+        var var_it = scope.variables.iterator();
+        while (var_it.next()) |entry| {
+            const variable = entry.value_ptr.*;
+            if (variable.type == .nothing) continue;
+
+            const ir_value = valueToIrValue(allocator, variable) catch continue;
+            obj_ptr.fields.append(.{
+                .name = entry.key_ptr.*,
+                .value = ir_value,
+            }) catch unreachable;
+        }
+
+        // Add nested scopes as nested objects.
+        var nested_it = scope.nested_scopes.iterator();
+        while (nested_it.next()) |nested_entry| {
+            const child_name = nested_entry.key_ptr.*;
+            const child_scope = nested_entry.value_ptr.*;
+
+            const child_obj = scopeToObject(allocator, child_scope) catch continue;
+            obj_ptr.fields.append(.{
+                .name = child_name,
+                .value = ir.Value{ .object = child_obj },
+            }) catch unreachable;
+        }
+
+        return obj_ptr;
     }
 
     // Build lookup path for forward traversal (looking ahead from current position)
@@ -176,12 +262,15 @@ pub const Preprocessor = struct {
         // Collect groups in reverse order (right to left)
         while (i >= 0) : (i -= 1) {
             if (tokens[@intCast(i)].token_type == .TKN_GROUP) {
+                const t = tokens[@intCast(i)];
                 try groups.append(Variable{
-                    .name = tokens[@intCast(i)].literal,
+                    .name = t.literal,
                     .value = Value{ .nothing = {} },
                     .type = .nothing,
                     .mutable = false,
                     .temp = false,
+                    .line_number = t.line_number,
+                    .token_number = t.token_number,
                 });
             } else if (tokens[@intCast(i)].token_type == .TKN_NEWLINE or
                 tokens[@intCast(i)].token_type == .TKN_EOF)
@@ -204,53 +293,72 @@ pub const Preprocessor = struct {
             const id_pos: isize = @intCast(index - 1);
 
             if (tokens[@intCast(id_pos)].token_type == .TKN_IDENTIFIER) {
+                const id_tok = tokens[@intCast(id_pos)];
                 try result.append(Variable{
-                    .name = tokens[@intCast(id_pos)].literal,
+                    .name = id_tok.literal,
                     .value = Value{ .nothing = {} },
                     .type = .nothing,
-                    .mutable = tokens[@intCast(id_pos)].is_mutable,
-                    .temp = tokens[@intCast(id_pos)].is_temporary,
+                    .mutable = id_tok.is_mutable,
+                    .temp = id_tok.is_temporary,
+                    .line_number = id_tok.line_number,
+                    .token_number = id_tok.token_number,
                 });
                 lookup_found = true;
             } else if (id_pos > 0 and tokens[@intCast(id_pos)].token_type == .TKN_TYPE and
                 tokens[@intCast(id_pos - 1)].token_type == .TKN_IDENTIFIER)
             {
+                const id_tok = tokens[@intCast(id_pos - 1)];
                 try result.append(Variable{
-                    .name = tokens[@intCast(id_pos - 1)].literal,
+                    .name = id_tok.literal,
                     .value = Value{ .nothing = {} },
                     .type = .nothing,
-                    .mutable = tokens[@intCast(id_pos - 1)].is_mutable,
-                    .temp = tokens[@intCast(id_pos - 1)].is_temporary,
+                    .mutable = id_tok.is_mutable,
+                    .temp = id_tok.is_temporary,
+                    .line_number = id_tok.line_number,
+                    .token_number = id_tok.token_number,
                 });
                 lookup_found = true;
             }
         }
 
         if (!lookup_found) {
-            Reporting.throwError("Error: No lookup found before assignment at token {d}\n", .{index});
+            if (self.source_lines.len > 0) {
+                const t = tokens[index];
+                self.underlineAt(t.line_number, t.token_number, t.literal.len);
+            }
+            Reporting.throwError(
+                "Error: No lookup found before assignment at token index {d} (line {d}, token {d})\n",
+                .{ index, tokens[index].line_number, tokens[index].token_number },
+            );
             return error.InvalidAssignment;
         }
 
         var value_found = false;
 
         if (index + 1 < tokens.len and tokens[index + 1].token_type == .TKN_EXPRESSION) {
+            const assign_tok = tokens[index];
             try result.append(Variable{
                 .name = "value", // Placeholder name
                 .value = Value{ .int = 12 }, // Default for expressions for now
                 .type = .int,
                 .mutable = false,
                 .temp = false,
+                .line_number = assign_tok.line_number,
+                .token_number = assign_tok.token_number,
             });
             value_found = true;
         } else if (index + 1 < tokens.len and tokens[index + 1].token_type == .TKN_VALUE) {
             // Get the mutability from the identifier (last item in result)
             const identifier = result.items[result.items.len - 1];
+            const val_tok = tokens[index + 1];
             try result.append(Variable{
                 .name = "value", // Placeholder
-                .value = tokens[index + 1].value,
-                .type = tokens[index + 1].value_type,
+                .value = val_tok.value,
+                .type = val_tok.value_type,
                 .mutable = identifier.mutable, // Use the mutability from the identifier
-                .temp = tokens[index + 1].is_temporary,
+                .temp = val_tok.is_temporary,
+                .line_number = val_tok.line_number,
+                .token_number = val_tok.token_number,
             });
             value_found = true;
         } else if (index + 1 < tokens.len and (tokens[index + 1].token_type == .TKN_IDENTIFIER or
@@ -321,6 +429,10 @@ pub const Preprocessor = struct {
         }
 
         if (!value_found) {
+            if (self.source_lines.len > 0) {
+                const t = tokens[index];
+                self.underlineAt(t.line_number, t.token_number, t.literal.len);
+            }
             Reporting.throwError("Warning: No value found after assignment, using default\n", .{});
             return error.NoValueFoundAfterAssignment;
         }
@@ -412,26 +524,50 @@ pub const Preprocessor = struct {
         // Step 1: Determine if we have an explicit type declaration
         const has_explicit_type = identifier.type != .nothing;
         const declared_type = if (has_explicit_type) identifier.type else value_item.type;
+        var final_mutable = identifier.mutable;
+        var final_temp = identifier.temp;
 
         // Step 2: Check if variable already exists
         if (target_scope.variables.get(identifier.name)) |existing_var| {
             // Check mutability
             if (!existing_var.mutable) {
-                Reporting.throwError("Error: Cannot reassign immutable variable '{s}'\n", .{identifier.name});
+                if (self.source_lines.len > 0) {
+                    self.underlineAt(identifier.line_number, identifier.token_number, identifier.name.len);
+                }
+                Reporting.throwError(
+                    "Error: Cannot reassign immutable variable '{s}' (assignment to '{s}' at line {d}, token {d})\n",
+                    .{ identifier.name, identifier.name, identifier.line_number, identifier.token_number },
+                );
                 return error.ImmutableVariable;
             }
 
             // Check type compatibility with existing variable
             if (!isTypeCompatible(existing_var.type, value_item.type)) {
-                Reporting.throwError("Error: Cannot assign {s} value to variable '{s}' of type {s}\n", .{ value_item.type.toString(), identifier.name, existing_var.type.toString() });
+                if (self.source_lines.len > 0) {
+                    self.underlineAt(identifier.line_number, identifier.token_number, identifier.name.len);
+                }
+                Reporting.throwError(
+                    "Error: Cannot assign {s} value to variable '{s}' of type {s} (line {d}, token {d})\n",
+                    .{ value_item.type.toString(), identifier.name, existing_var.type.toString(), identifier.line_number, identifier.token_number },
+                );
                 return error.TypeMismatch;
             }
+
+            // For reassignments, preserve original mutability and temp status
+            final_mutable = existing_var.mutable;
+            final_temp = existing_var.temp;
         } else {
             // Step 3: For new variables, handle type checking/inference
             if (has_explicit_type) {
                 // Check if value matches declared type
                 if (!isTypeCompatible(declared_type, value_item.type)) {
-                    Reporting.throwError("Error: Cannot initialize {s} variable '{s}' with {s} value\n", .{ declared_type.toString(), identifier.name, value_item.type.toString() });
+                    if (self.source_lines.len > 0) {
+                        self.underlineAt(identifier.line_number, identifier.token_number, identifier.name.len);
+                    }
+                    Reporting.throwError(
+                        "Error: Cannot initialize {s} variable '{s}' with {s} value (line {d}, token {d})\n",
+                        .{ declared_type.toString(), identifier.name, value_item.type.toString(), identifier.line_number, identifier.token_number },
+                    );
                     return error.TypeMismatch;
                 }
             }
@@ -443,8 +579,10 @@ pub const Preprocessor = struct {
             .name = identifier.name,
             .value = value_item.value,
             .type = declared_type,
-            .mutable = identifier.mutable,
-            .temp = identifier.temp,
+            .mutable = final_mutable,
+            .temp = final_temp,
+            .line_number = identifier.line_number,
+            .token_number = identifier.token_number,
         };
 
         try target_scope.variables.put(identifier.name, variable);
@@ -452,7 +590,11 @@ pub const Preprocessor = struct {
 
     fn evaluateExpression(self: *Preprocessor, tokens: []Token) !Value {
         if (tokens.len == 0) {
-            Reporting.throwError("Warning: Empty expression\n", .{});
+            if (self.source_lines.len > 0 and tokens.len > 0) {
+                const t = tokens[0];
+                self.underlineAt(t.line_number, t.token_number, t.literal.len);
+            }
+            Reporting.throwError("Error: Empty expression (line {d}, token {d})\n", .{ tokens[0].line_number, tokens[0].token_number });
             return Value{ .int = 0 };
         }
 
@@ -526,7 +668,7 @@ pub const Preprocessor = struct {
                 .TKN_VALUE => {
                     // Push the value onto the stack
                     const value: Value = switch (token.value_type) {
-                        .int => Value{ .int = std.fmt.parseInt(i32, token.literal, 10) catch 0 },
+                        .int => Value{ .int = std.fmt.parseInt(i64, token.literal, 10) catch 0 },
                         .float => Value{ .float = std.fmt.parseFloat(f64, token.literal) catch 0 },
                         .string => Value{ .string = token.literal },
                         .bool => Value{ .bool = std.mem.eql(u8, token.literal, "true") },
@@ -543,13 +685,19 @@ pub const Preprocessor = struct {
                     }
 
                     if (!found) {
-                        Reporting.throwError("Warning: Variable '{s}' not found in expression, using 0\n", .{token.literal});
+                        if (self.source_lines.len > 0) {
+                            self.underlineAt(token.line_number, token.token_number, token.literal.len);
+                        }
+                        Reporting.throwError("Error: Variable '{s}' not found in expression, using 0 (line {d}, token {d})\n", .{ token.literal, token.line_number, token.token_number });
                         return error.VariableNotFoundInExpression;
                     }
                 },
                 .TKN_PLUS, .TKN_MINUS, .TKN_STAR, .TKN_SLASH, .TKN_PERCENT, .TKN_POWER => {
                     if (result_stack.items.len < 2) {
-                        Reporting.throwError("Error: Not enough operands for operator {s}\n", .{token.literal});
+                        if (self.source_lines.len > 0) {
+                            self.underlineAt(token.line_number, token.token_number, token.literal.len);
+                        }
+                        Reporting.throwError("Error: Not enough operands for operator {s} (line {d}, token {d})\n", .{ token.literal, token.line_number, token.token_number });
                         return error.NotEnoughOperands;
                     }
 
@@ -563,8 +711,8 @@ pub const Preprocessor = struct {
                     var use_float = false;
                     var a_float: f64 = 0;
                     var b_float: f64 = 0;
-                    var a_int: i32 = 0;
-                    var b_int: i32 = 0;
+                    var a_int: i64 = 0;
+                    var b_int: i64 = 0;
 
                     // Extract values and determine operation type
                     switch (a) {
@@ -577,7 +725,10 @@ pub const Preprocessor = struct {
                             a_float = val;
                         },
                         .string, .bool, .nothing => {
-                            Reporting.throwError("Warning: Non-numeric value in expression, using 0\n", .{});
+                            if (self.source_lines.len > 0) {
+                                self.underlineAt(token.line_number, token.token_number, token.literal.len);
+                            }
+                            Reporting.throwError("Error: Non-numeric value in expression, using 0 (line {d}, token {d})\n", .{ token.line_number, token.token_number });
                             return error.NonNumericValue;
                         },
                     }
@@ -592,7 +743,10 @@ pub const Preprocessor = struct {
                             b_float = val;
                         },
                         .string, .bool, .nothing => {
-                            Reporting.throwError("Warning: Non-numeric value in expression, using 0\n", .{});
+                            if (self.source_lines.len > 0) {
+                                self.underlineAt(token.line_number, token.token_number, token.literal.len);
+                            }
+                            Reporting.throwError("Error: Non-numeric value in expression, using 0 (line {d}, token {d})\n", .{ token.line_number, token.token_number });
                             return error.NonNumericValue;
                         },
                     }
@@ -609,14 +763,20 @@ pub const Preprocessor = struct {
                             .TKN_STAR => a_float * b_float,
                             .TKN_SLASH => {
                                 if (b_float == 0) {
-                                    Reporting.throwError("Error: Division by zero\n", .{});
+                                    if (self.source_lines.len > 0) {
+                                        self.underlineAt(token.line_number, token.token_number, token.literal.len);
+                                    }
+                                    Reporting.throwError("Error: Division by zero (line {d}, token {d})\n", .{ token.line_number, token.token_number });
                                     return error.DivisionByZero;
                                 }
                                 return Value{ .float = a_float / b_float };
                             },
                             .TKN_PERCENT => {
                                 if (b_float == 0) {
-                                    Reporting.throwError("Error: Modulo by zero\n", .{});
+                                    if (self.source_lines.len > 0) {
+                                        self.underlineAt(token.line_number, token.token_number, token.literal.len);
+                                    }
+                                    Reporting.throwError("Error: Modulo by zero (line {d}, token {d})\n", .{ token.line_number, token.token_number });
                                     return error.ModuloByZero;
                                 }
                                 return Value{ .float = @mod(a_float, b_float) };
@@ -626,26 +786,32 @@ pub const Preprocessor = struct {
                         };
                         try result_stack.append(Value{ .float = float_result });
                     } else {
-                        const int_result: i32 = switch (token.token_type) {
+                        const int_result: i64 = switch (token.token_type) {
                             .TKN_PLUS => a_int + b_int,
                             .TKN_MINUS => a_int - b_int,
                             .TKN_STAR => a_int * b_int,
                             .TKN_SLASH => {
                                 if (b_int == 0) {
-                                    Reporting.throwError("Error: Division by zero\n", .{});
+                                    if (self.source_lines.len > 0) {
+                                        self.underlineAt(token.line_number, token.token_number, token.literal.len);
+                                    }
+                                    Reporting.throwError("Error: Division by zero (line {d}, token {d})\n", .{ token.line_number, token.token_number });
                                     return error.DivisionByZero;
                                 }
                                 return Value{ .int = @divTrunc(a_int, b_int) };
                             },
                             .TKN_PERCENT => {
                                 if (b_int == 0) {
-                                    Reporting.throwError("Error: Modulo by zero\n", .{});
+                                    if (self.source_lines.len > 0) {
+                                        self.underlineAt(token.line_number, token.token_number, token.literal.len);
+                                    }
+                                    Reporting.throwError("Error: Modulo by zero (line {d}, token {d})\n", .{ token.line_number, token.token_number });
                                     return error.ModuloByZero;
                                 }
                                 return Value{ .int = @mod(a_int, b_int) };
                             },
                             .TKN_POWER => blk: {
-                                var result: i32 = 1;
+                                var result: i64 = 1;
                                 var exp = b_int;
                                 while (exp > 0) : (exp -= 1) {
                                     result *= a_int;
@@ -665,9 +831,23 @@ pub const Preprocessor = struct {
         if (result_stack.items.len > 0) {
             return result_stack.items[result_stack.items.len - 1];
         } else {
-            Reporting.throwError("Error: Empty expression result\n", .{});
+            if (self.source_lines.len > 0 and tokens.len > 0) {
+                const t = tokens[0];
+                self.underlineAt(t.line_number, t.token_number, t.literal.len);
+            }
+            Reporting.throwError("Error: Empty expression result (line {d}, token {d})\n", .{ tokens[0].line_number, tokens[0].token_number });
             return Value{ .int = 0 };
         }
+    }
+
+    fn underlineAt(self: *Preprocessor, line_number: usize, token_number: usize, span_len: usize) void {
+        if (self.source_lines.len == 0 or line_number == 0) return;
+        const line_index = line_number - 1;
+        if (line_index >= self.source_lines.len) return;
+        const line = self.source_lines[line_index];
+        const column: usize = if (token_number > 0) token_number - 1 else 0;
+        const length: usize = if (span_len > 0) span_len else 1;
+        Reporting.underline(line, column, length);
     }
 
     // Main interpret function

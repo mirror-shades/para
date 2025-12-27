@@ -11,7 +11,7 @@ Para is a minimalist data representation language designed for clear, typed data
 - **Simplicity**: Minimal syntax with clear distinctions between variables and groups.
 - **Explicitness**: All variables must be initialized, and types are strictly enforced.
 - **Compile-Time Safety**: Errors (e.g., undefined references, type mismatches) are caught at compile time.
-- **Mutability**: All variables and groups are mutable, unless marked constant.
+- **Mutability**: Variables must be explicitly declared as `var` (mutable) or `const` (immutable).
 - **Scoped Naming**: Variables and groups have distinct namespaces within their scope.
 
 ## Syntax Rules
@@ -37,7 +37,7 @@ Para is a minimalist data representation language designed for clear, typed data
 
 ## Simple Types
 
-Para has five fixed types, all mutable unless marked constant. Heterogeneous arrays will be added in the future.
+Para has five fixed types. Variables must be explicitly declared as `var` (mutable) or `const` (immutable). Temporary variables can be declared with the `temp` prefix and are dropped during preprocessing. Heterogeneous arrays will be added in the future.
 
 ### Integer
 
@@ -75,11 +75,25 @@ created :: time is 17453900000
 updated :: time is "2024-03-14T16::45::00Z"
 ```
 
-### Constants
+### Variables and Constants
+
+Variables must be explicitly declared as mutable or immutable:
 
 ```para
-// fields can be marked constant
-id :: const int is 567
+// Mutable variables (can be reassigned)
+var x :: int is 42
+x = 50  // This works
+
+// Immutable constants (cannot be reassigned)
+const id :: int is 567
+id = 600  // This errors
+
+// Temporary variables (dropped during preprocessing)
+temp var intermediate :: int is 100
+temp const constant_temp :: string is "temporary"
+
+// Legacy syntax (still supported)
+!immutable_var :: int is 123  // Same as 'const'
 ```
 
 ### Nulls

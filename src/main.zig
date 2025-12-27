@@ -8,6 +8,7 @@ const Preprocessor = @import("preprocessor/prepro.zig").Preprocessor;
 const Writer = @import("utils/writer.zig");
 const Reporting = @import("utils/reporting.zig");
 const src = Reporting.DebugSource;
+const json_backend = @import("backend/json.zig");
 
 fn getDisplayText(token_kind: token.TokenKind, token_text: []const u8) []const u8 {
     return switch (token_kind) {
@@ -23,9 +24,12 @@ pub fn main() !void {
     var debug_lexer = false;
     var debug_parser = false;
     var debug_preprocessor = false;
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
+    var output_json = false;
+    // Use a fixed buffer allocator to reduce heap allocations and improve performance
+    // for typical input sizes. Increase the buffer if you expect very large files.
+    var arena_buffer: [1024 * 1024]u8 = undefined;
+    var fba = std.heap.FixedBufferAllocator.init(&arena_buffer);
+    const allocator = fba.allocator();
 
     var args = try std.process.argsWithAllocator(allocator);
     defer args.deinit();
@@ -49,6 +53,8 @@ pub fn main() !void {
             debug_lexer = true;
             debug_parser = true;
             debug_preprocessor = true;
+        } else if (std.mem.eql(u8, arg, "--json")) {
+            output_json = true;
         } else if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "-help") or std.mem.eql(u8, arg, "--h")) {
             printUsage(program_name);
             return;
@@ -113,10 +119,11 @@ pub fn main() !void {
         para_parser.dumpParser();
     }
 
-    try Writer.writeFlatFile(para_parser.parsed_tokens.items);
-
     var preprocessor = Preprocessor.init(allocator);
     defer preprocessor.deinit();
+
+    // Provide source lines to the preprocessor for better diagnostics
+    preprocessor.setSourceLines(para_lexer.lines.items);
 
     if (debug_preprocessor) {
         Reporting.log("", .{});
@@ -125,11 +132,22 @@ pub fn main() !void {
 
     try preprocessor.process(para_parser.parsed_tokens.items);
 
-    // Create a file with the final variable state
-    try Writer.writeVariableState("output.w.para", allocator);
+    if (output_json) {
+        var ir_program = preprocessor.buildIrProgram();
+        defer ir_program.deinit();
 
-    if (debug_preprocessor) {
-        try preprocessor.dumpVariables(allocator);
+        var stdout_file = std.io.getStdOut().writer();
+        try json_backend.writeProgramJson(stdout_file, &ir_program);
+        try stdout_file.writeByte('\n');
+    } else {
+        try Writer.writeFlatFile(para_parser.parsed_tokens.items);
+
+        // Create a file with the final variable state
+        try Writer.writeVariableState("output.w.para", allocator);
+
+        if (debug_preprocessor) {
+            try preprocessor.dumpVariables(allocator);
+        }
     }
 }
 
@@ -170,5 +188,6 @@ fn printUsage(program_name: []const u8) void {
     Reporting.log("  --debug_parser       Enable parser debug output\n", .{});
     Reporting.log("  --debug_preprocessor Enable preprocessor debug output\n", .{});
     Reporting.log("  --debug              Enable all debug output\n", .{});
+    Reporting.log("  --json               Emit JSON (experimental)\n", .{});
     std.process.exit(0); // Exit cleanly after printing all help text
 }

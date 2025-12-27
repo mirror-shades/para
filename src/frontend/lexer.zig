@@ -41,17 +41,25 @@ pub const Lexer = struct {
         var start: usize = 0;
         var i: usize = 0;
         while (i < self.input.len) : (i += 1) {
-            if (self.input[i] == '\n') {
+            const c = self.input[i];
+            if (c == '\n' or c == '\r') {
+                // Capture the line content up to (but excluding) the
+                // line-ending character(s).
                 try self.lines.append(self.input[start..i]);
+
+                // Treat CRLF as a single logical newline by consuming the
+                // trailing '\n' here, so the next line starts after it.
+                if (c == '\r' and i + 1 < self.input.len and self.input[i + 1] == '\n') {
+                    i += 1;
+                }
                 start = i + 1;
             }
-            if (self.input[i] == '\r') {
-                i += 1;
-            }
         }
-        // Add the last line if there's any content after the last newline
-        if (start < self.input.len) {
-            try self.lines.append(self.input[start..]);
+        // Always add the trailing line segment (possibly empty when the
+        // source ends with a newline) so that `self.line` (1-based) never
+        // exceeds `self.lines.len` during error reporting.
+        if (start <= self.input.len) {
+            try self.lines.append(self.input[start..self.input.len]);
         }
     }
 
@@ -218,6 +226,8 @@ pub const Lexer = struct {
                 }
             }
 
+            // Fast-path handling for common leading letters used by
+            // type/value keywords and the `temp` declaration modifier.
             if (c == 'i' or c == 's' or c == 'b' or c == 'f' or c == 't' or c == 'f' or c == 'T' or c == 'F' or c == 'I' or c == 'F' or c == 'S' or c == 'B') {
                 const current_column = self.column;
                 const word = try self.readWord();
@@ -238,6 +248,8 @@ pub const Lexer = struct {
                     (c == 'T' and std.mem.eql(u8, word, "TRUE")) or
                     (c == 'F' and std.mem.eql(u8, word, "FALSE"));
 
+                const is_temp_keyword = std.mem.eql(u8, word, "temp");
+
                 if (is_type_word) {
                     try self.tokens.append(.{
                         .literal = word,
@@ -251,6 +263,16 @@ pub const Lexer = struct {
                         .literal = word,
                         .token_type = .TKN_VALUE,
                         .value_type = .bool,
+                        .line_number = self.line,
+                        .token_number = current_column,
+                    });
+                } else if (is_temp_keyword) {
+                    // Ensure `temp` is tokenized as a dedicated TEMP token so
+                    // the parser can mark following declarations as temporary.
+                    try self.tokens.append(.{
+                        .literal = word,
+                        .token_type = .TKN_TEMP,
+                        .value_type = .nothing,
                         .line_number = self.line,
                         .token_number = current_column,
                     });
@@ -456,7 +478,7 @@ pub const Lexer = struct {
                     const current_column = self.column;
                     try self.tokens.append(.{
                         .literal = "!",
-                        .token_type = .TKN_MUTABLE,
+                        .token_type = .TKN_EXCLAIM,
                         .value_type = .nothing,
                         .line_number = self.line,
                         .token_number = current_column,
@@ -464,19 +486,6 @@ pub const Lexer = struct {
                     self.token_count += 1;
                     self.advance();
                 },
-                '~' => {
-                    const current_column = self.column;
-                    try self.tokens.append(.{
-                        .literal = "~",
-                        .token_type = .TKN_TEMPORARY,
-                        .value_type = .nothing,
-                        .line_number = self.line,
-                        .token_number = current_column,
-                    });
-                    self.token_count += 1;
-                    self.advance();
-                },
-
                 '"' => try self.readString(),
                 'a'...'z', 'A'...'Z', '_' => {
                     const current_column = self.column;
@@ -518,7 +527,31 @@ pub const Lexer = struct {
     }
 
     fn makeWordToken(self: *Lexer, word: []const u8, column: usize) !void {
-        if (std.meta.stringToEnum(token.ValueType, word)) |value_type| {
+        if (std.mem.eql(u8, word, "temp")) {
+            try self.tokens.append(.{
+                .literal = word,
+                .token_type = .TKN_TEMP,
+                .value_type = .nothing,
+                .line_number = self.line,
+                .token_number = column,
+            });
+        } else if (std.mem.eql(u8, word, "var")) {
+            try self.tokens.append(.{
+                .literal = word,
+                .token_type = .TKN_VAR,
+                .value_type = .nothing,
+                .line_number = self.line,
+                .token_number = column,
+            });
+        } else if (std.mem.eql(u8, word, "const")) {
+            try self.tokens.append(.{
+                .literal = word,
+                .token_type = .TKN_CONST,
+                .value_type = .nothing,
+                .line_number = self.line,
+                .token_number = column,
+            });
+        } else if (std.meta.stringToEnum(token.ValueType, word)) |value_type| {
             try self.tokens.append(.{
                 .literal = word,
                 .token_type = .TKN_VALUE,
