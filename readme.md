@@ -42,7 +42,7 @@ Para has five fixed types. Variables must be explicitly declared as `var` (mutab
 ### Integer
 
 ```para
-// int is an i32
+// int is an i64
 x :: int is 18
 ```
 
@@ -91,18 +91,6 @@ id = 600  // This errors
 // Temporary variables (dropped during preprocessing)
 temp var intermediate :: int is 100
 temp const constant_temp :: string is "temporary"
-
-// Legacy syntax (still supported)
-!immutable_var :: int is 123  // Same as 'const'
-```
-
-### Nulls
-
-```para
-// null is a value than can be assigned to any type if permitted
-x :: int is null // this errors, must be a nullable type
-x :: int? is null // this is correct
-x :: const int? is null // this errors because const can't be null
 ```
 
 ## Variable References
