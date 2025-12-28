@@ -8,8 +8,31 @@ const printf = std.debug.print;
 // update this when adding tests
 const TEST_TOTAL = 15;
 
+// Legacy: previously tests attempted to discover `para` via argv. Keep this as
+// a no-op fallback; the build now supplies `PARA_EXE_PATH` instead.
+var para_exe_override: ?[]const u8 = null;
+
 fn print(comptime format: []const u8) void {
     printf(format, .{});
+}
+
+fn getParaExePath(allocator: std.mem.Allocator, project_root: []const u8) ![]u8 {
+    const exe_name = if (builtin.os.tag == .windows) "para.exe" else "para";
+
+    const test_exe_rel = try fs.path.join(allocator, &[_][]const u8{ "zig-out", "bin", "test-bin", exe_name });
+    defer allocator.free(test_exe_rel);
+    const test_exe_abs = try fs.path.join(allocator, &[_][]const u8{ project_root, test_exe_rel });
+
+    if (fs.openFileAbsolute(test_exe_abs, .{})) |file| {
+        file.close();
+        return test_exe_abs;
+    } else |_| {
+        allocator.free(test_exe_abs);
+    }
+
+    const exe_rel = try fs.path.join(allocator, &[_][]const u8{ "zig-out", "bin", exe_name });
+    defer allocator.free(exe_rel);
+    return try fs.path.join(allocator, &[_][]const u8{ project_root, exe_rel });
 }
 
 fn dirHasFile(dir: fs.Dir, name: []const u8) bool {
@@ -86,12 +109,10 @@ fn runParaCommand(allocator: std.mem.Allocator, path: []const u8) ![]const u8 {
     const file_contents = try file.readToEndAlloc(child_allocator, std.math.maxInt(usize));
     defer child_allocator.free(file_contents);
 
-    // Build absolute path to the para executable
-    const exe_name = if (builtin.os.tag == .windows) "para.exe" else "para";
-    const exe_rel = try fs.path.join(allocator, &[_][]const u8{ "zig-out", "bin", exe_name });
-    defer allocator.free(exe_rel);
-    const exe_path = try fs.path.join(allocator, &[_][]const u8{ project_root, exe_rel });
-    defer allocator.free(exe_path);
+    const exe_path_owned = getParaExePath(allocator, project_root) catch null;
+    defer if (exe_path_owned) |p| allocator.free(p);
+
+    const exe_path = exe_path_owned orelse return error.FileNotFound;
 
     // Absolute path to input file for the child
     const input_abs = try fs.path.join(allocator, &[_][]const u8{ project_root, path });
@@ -127,11 +148,10 @@ fn runParaJsonCommand(allocator: std.mem.Allocator, path: []const u8) ![]const u
     const file = root_dir.openFile(path, .{}) catch return error.FileNotFound;
     defer file.close();
 
-    const exe_name = if (builtin.os.tag == .windows) "para.exe" else "para";
-    const exe_rel = try fs.path.join(allocator, &[_][]const u8{ "zig-out", "bin", exe_name });
-    defer allocator.free(exe_rel);
-    const exe_path = try fs.path.join(allocator, &[_][]const u8{ project_root, exe_rel });
-    defer allocator.free(exe_path);
+    const exe_path_owned = getParaExePath(allocator, project_root) catch null;
+    defer if (exe_path_owned) |p| allocator.free(p);
+
+    const exe_path = exe_path_owned orelse return error.FileNotFound;
 
     const input_abs = try fs.path.join(allocator, &[_][]const u8{ project_root, path });
     defer allocator.free(input_abs);
@@ -166,11 +186,10 @@ fn runParaZonCommand(allocator: std.mem.Allocator, path: []const u8) ![]const u8
     const file = root_dir.openFile(path, .{}) catch return error.FileNotFound;
     defer file.close();
 
-    const exe_name = if (builtin.os.tag == .windows) "para.exe" else "para";
-    const exe_rel = try fs.path.join(allocator, &[_][]const u8{ "zig-out", "bin", exe_name });
-    defer allocator.free(exe_rel);
-    const exe_path = try fs.path.join(allocator, &[_][]const u8{ project_root, exe_rel });
-    defer allocator.free(exe_path);
+    const exe_path_owned = getParaExePath(allocator, project_root) catch null;
+    defer if (exe_path_owned) |p| allocator.free(p);
+
+    const exe_path = exe_path_owned orelse return error.FileNotFound;
 
     const input_abs = try fs.path.join(allocator, &[_][]const u8{ project_root, path });
     defer allocator.free(input_abs);
@@ -205,11 +224,10 @@ fn runParaYamlCommand(allocator: std.mem.Allocator, path: []const u8) ![]const u
     const file = root_dir.openFile(path, .{}) catch return error.FileNotFound;
     defer file.close();
 
-    const exe_name = if (builtin.os.tag == .windows) "para.exe" else "para";
-    const exe_rel = try fs.path.join(allocator, &[_][]const u8{ "zig-out", "bin", exe_name });
-    defer allocator.free(exe_rel);
-    const exe_path = try fs.path.join(allocator, &[_][]const u8{ project_root, exe_rel });
-    defer allocator.free(exe_path);
+    const exe_path_owned = getParaExePath(allocator, project_root) catch null;
+    defer if (exe_path_owned) |p| allocator.free(p);
+
+    const exe_path = exe_path_owned orelse return error.FileNotFound;
 
     const input_abs = try fs.path.join(allocator, &[_][]const u8{ project_root, path });
     defer allocator.free(input_abs);
@@ -244,11 +262,10 @@ fn runParaTomlCommand(allocator: std.mem.Allocator, path: []const u8) ![]const u
     const file = root_dir.openFile(path, .{}) catch return error.FileNotFound;
     defer file.close();
 
-    const exe_name = if (builtin.os.tag == .windows) "para.exe" else "para";
-    const exe_rel = try fs.path.join(allocator, &[_][]const u8{ "zig-out", "bin", exe_name });
-    defer allocator.free(exe_rel);
-    const exe_path = try fs.path.join(allocator, &[_][]const u8{ project_root, exe_rel });
-    defer allocator.free(exe_path);
+    const exe_path_owned = getParaExePath(allocator, project_root) catch null;
+    defer if (exe_path_owned) |p| allocator.free(p);
+
+    const exe_path = exe_path_owned orelse return error.FileNotFound;
 
     const input_abs = try fs.path.join(allocator, &[_][]const u8{ project_root, path });
     defer allocator.free(input_abs);
@@ -283,11 +300,10 @@ fn runParaRonCommand(allocator: std.mem.Allocator, path: []const u8) ![]const u8
     const file = root_dir.openFile(path, .{}) catch return error.FileNotFound;
     defer file.close();
 
-    const exe_name = if (builtin.os.tag == .windows) "para.exe" else "para";
-    const exe_rel = try fs.path.join(allocator, &[_][]const u8{ "zig-out", "bin", exe_name });
-    defer allocator.free(exe_rel);
-    const exe_path = try fs.path.join(allocator, &[_][]const u8{ project_root, exe_rel });
-    defer allocator.free(exe_path);
+    const exe_path_owned = getParaExePath(allocator, project_root) catch null;
+    defer if (exe_path_owned) |p| allocator.free(p);
+
+    const exe_path = exe_path_owned orelse return error.FileNotFound;
 
     const input_abs = try fs.path.join(allocator, &[_][]const u8{ project_root, path });
     defer allocator.free(input_abs);
@@ -711,6 +727,9 @@ test "para language tests" {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
+
+    // Prefer `PARA_EXE_PATH` (if set). Avoid inferring from argv because Zig's
+    // test runner passes its own flags there.
 
     print("\n🚀 Starting Para Language Test Suite\n");
     print("=" ** 50 ++ "\n");

@@ -21,8 +21,14 @@ pub fn build(b: *std.Build) void {
 
     const run_test = b.addRunArtifact(test_exe);
     const test_step = b.step("test", "Run the tests");
-    // Tests spawn the built `para` binary from `zig-out/bin`, so ensure the
-    // install step runs first to produce that artifact.
-    test_step.dependOn(b.getInstallStep());
+
+    // Tests spawn the `para` executable by path; install it to a dedicated
+    // subdirectory so `zig build test` doesn't fail if `zig-out/bin/para.exe`
+    // is currently in use on Windows.
+    const install_test_para = b.addInstallArtifact(exe, .{
+        .dest_sub_path = b.fmt("test-bin/{s}", .{exe.out_filename}),
+    });
+    test_step.dependOn(&install_test_para.step);
+    run_test.step.dependOn(&exe.step);
     test_step.dependOn(&run_test.step);
 }
