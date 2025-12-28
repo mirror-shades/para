@@ -69,9 +69,15 @@ var logics: bool = true
 
 ### Time
 
+`time` is stored as an `i64` containing Unix epoch milliseconds (UTC).
+
+Accepted formats:
+
+- Integer literal: treated as epoch milliseconds
+- String literal: either a numeric epoch-millis value (optional leading `+`/`-`), or a subset of ISO-8601 (examples: `"2024-03-14"`, `"2024-03-14T16:45:00Z"`, `"2024-03-14T16:45:00.123+02:00"`); if no timezone is provided, it’s treated as UTC
+
 ```para
-// time is a i64 but it allows the front end to handle ISO conversion
-var created: time = 17453900000
+var created: time = 1710434700000
 var updated: time = "2024-03-14T16:45:00Z"
 ```
 

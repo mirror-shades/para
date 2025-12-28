@@ -1245,7 +1245,16 @@ fn coerceValueToType(self: *Preprocessor, declared_type: ValueType, value_item: 
                     return out;
                 },
                 .string => {
-                    const millis = try parseTimeToUnixMillis(value_item.value.string);
+                    const millis = parseTimeToUnixMillis(value_item.value.string) catch {
+                        if (self.source_lines.len > 0) {
+                            self.underlineAt(value_item.line_number, value_item.token_number, @max(@as(usize, 1), value_item.value.string.len));
+                        }
+                        Reporting.throwError(
+                            "Error: Invalid time literal (expected epoch-millis integer or ISO-8601 string) (line {d}, token {d})\n",
+                            .{ value_item.line_number, value_item.token_number },
+                        );
+                        return error.InvalidTime;
+                    };
                     out.value = Value{ .time = millis };
                     out.type = .time;
                     return out;
@@ -1267,27 +1276,37 @@ fn parseTimeToUnixMillis(text: []const u8) !i64 {
     if (trimmed.len == 0) return error.InvalidTime;
 
     // Pure integer? treat as already-millis since epoch.
-    var all_digits = true;
-    for (trimmed) |c| {
-        if (c < '0' or c > '9') {
-            all_digits = false;
-            break;
+    // Allow optional leading '+' or '-' for consistency with integer literals.
+    var digit_start: usize = 0;
+    if (trimmed[0] == '+' or trimmed[0] == '-') digit_start = 1;
+    if (digit_start < trimmed.len) {
+        var all_digits = true;
+        for (trimmed[digit_start..]) |c| {
+            if (c < '0' or c > '9') {
+                all_digits = false;
+                break;
+            }
         }
-    }
-    if (all_digits) {
-        return std.fmt.parseInt(i64, trimmed, 10);
+        if (all_digits) {
+            const to_parse = if (trimmed[0] == '+') trimmed[1..] else trimmed;
+            return std.fmt.parseInt(i64, to_parse, 10);
+        }
     }
 
     // Parse a subset of ISO-8601:
     //   YYYY-MM-DD
     //   YYYY-MM-DDTHH:MM:SSZ
-    //   YYYY-MM-DDTHH:MM:SS(.sss)?(Z|±HH:MM)?
+    //   YYYY-MM-DDTHH:MM:SS(.sss)?(Z|+/-HH:MM)?
     var i: usize = 0;
     const year = try parseFixedInt(trimmed, &i, 4);
     try expectChar(trimmed, &i, '-');
     const month = try parseFixedInt(trimmed, &i, 2);
     try expectChar(trimmed, &i, '-');
     const day = try parseFixedInt(trimmed, &i, 2);
+
+    if (month < 1 or month > 12) return error.InvalidTime;
+    const dim = daysInMonth(year, month);
+    if (dim == 0 or day < 1 or day > dim) return error.InvalidTime;
 
     var hour: i64 = 0;
     var minute: i64 = 0;
@@ -1302,21 +1321,25 @@ fn parseTimeToUnixMillis(text: []const u8) !i64 {
         try expectChar(trimmed, &i, ':');
         second = try parseFixedInt(trimmed, &i, 2);
 
+        if (hour < 0 or hour > 23) return error.InvalidTime;
+        if (minute < 0 or minute > 59) return error.InvalidTime;
+        if (second < 0 or second > 59) return error.InvalidTime;
+
         if (i < trimmed.len and trimmed[i] == '.') {
             i += 1;
             const start = i;
             while (i < trimmed.len and trimmed[i] >= '0' and trimmed[i] <= '9') : (i += 1) {}
             const frac = trimmed[start..i];
-            if (frac.len > 0) {
-                // take up to 3 digits as milliseconds
-                var tmp: i64 = 0;
-                var n: usize = 0;
-                while (n < frac.len and n < 3) : (n += 1) {
-                    tmp = tmp * 10 + @as(i64, @intCast(frac[n] - '0'));
-                }
-                while (n < 3) : (n += 1) tmp *= 10;
-                millis = tmp;
+            if (frac.len == 0) return error.InvalidTime;
+
+            // take up to 3 digits as milliseconds
+            var tmp: i64 = 0;
+            var n: usize = 0;
+            while (n < frac.len and n < 3) : (n += 1) {
+                tmp = tmp * 10 + @as(i64, @intCast(frac[n] - '0'));
             }
+            while (n < 3) : (n += 1) tmp *= 10;
+            millis = tmp;
         }
     }
 
@@ -1331,6 +1354,8 @@ fn parseTimeToUnixMillis(text: []const u8) !i64 {
             const tzh = try parseFixedInt(trimmed, &i, 2);
             try expectChar(trimmed, &i, ':');
             const tzm = try parseFixedInt(trimmed, &i, 2);
+            if (tzh < 0 or tzh > 23) return error.InvalidTime;
+            if (tzm < 0 or tzm > 59) return error.InvalidTime;
             tz_offset_minutes = sign * (tzh * 60 + tzm);
         }
     }
@@ -1338,8 +1363,48 @@ fn parseTimeToUnixMillis(text: []const u8) !i64 {
     if (i != trimmed.len) return error.InvalidTime;
 
     const days = daysFromCivil(year, month, day);
-    const total_seconds = days * 86400 + hour * 3600 + minute * 60 + second - tz_offset_minutes * 60;
-    return total_seconds * 1000 + millis;
+
+    const days_seconds = try mulChecked(days, 86400);
+    const h_seconds = try mulChecked(hour, 3600);
+    const m_seconds = try mulChecked(minute, 60);
+    const t_seconds = try addChecked(try addChecked(h_seconds, m_seconds), second);
+    const tz_seconds = try mulChecked(tz_offset_minutes, 60);
+    const total_seconds = try subChecked(try addChecked(days_seconds, t_seconds), tz_seconds);
+    return try addChecked(try mulChecked(total_seconds, 1000), millis);
+}
+
+fn addChecked(a: i64, b: i64) !i64 {
+    const res = @addWithOverflow(a, b);
+    if (res[1] != 0) return error.InvalidTime;
+    return res[0];
+}
+
+fn subChecked(a: i64, b: i64) !i64 {
+    const res = @subWithOverflow(a, b);
+    if (res[1] != 0) return error.InvalidTime;
+    return res[0];
+}
+
+fn mulChecked(a: i64, b: i64) !i64 {
+    const res = @mulWithOverflow(a, b);
+    if (res[1] != 0) return error.InvalidTime;
+    return res[0];
+}
+
+fn daysInMonth(year: i64, month: i64) i64 {
+    return switch (month) {
+        1, 3, 5, 7, 8, 10, 12 => 31,
+        4, 6, 9, 11 => 30,
+        2 => if (isLeapYear(year)) 29 else 28,
+        else => 0,
+    };
+}
+
+fn isLeapYear(year: i64) bool {
+    // Proleptic Gregorian calendar rules.
+    if (@mod(year, 4) != 0) return false;
+    if (@mod(year, 100) != 0) return true;
+    return @mod(year, 400) == 0;
 }
 
 fn parseFixedInt(s: []const u8, idx: *usize, len: usize) !i64 {

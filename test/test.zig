@@ -8,7 +8,7 @@ const printf = std.debug.print;
 // Pull in backend unit tests (e.g. string escaping helpers).
 const _backend_escape_tests = @import("backend_escape");
 
-const TEST_TOTAL = 16;
+const TEST_TOTAL = 17;
 
 fn print(comptime format: []const u8) void {
     printf(format, .{});
@@ -134,6 +134,43 @@ fn runParaCommand(allocator: std.mem.Allocator, path: []const u8) ![]const u8 {
         else => return error.CommandFailed,
     }
 
+    return try allocator.dupe(u8, result.stdout);
+}
+
+fn runParaCommandExpectFailure(allocator: std.mem.Allocator, path: []const u8) ![]const u8 {
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const child_allocator = arena.allocator();
+
+    const project_root = try findProjectRoot(allocator);
+    defer allocator.free(project_root);
+
+    const exe_path = try getParaExePath(allocator, project_root);
+    defer allocator.free(exe_path);
+
+    var root_dir = try fs.openDirAbsolute(project_root, .{});
+    defer root_dir.close();
+    _ = root_dir.openFile(path, .{}) catch return error.FileNotFound;
+
+    const input_abs = try fs.path.join(allocator, &[_][]const u8{ project_root, path });
+    defer allocator.free(input_abs);
+
+    const result = try process.Child.run(.{
+        .allocator = child_allocator,
+        .argv = &[_][]const u8{ exe_path, input_abs },
+        .cwd = project_root,
+        .max_output_bytes = std.math.maxInt(usize),
+    });
+    defer child_allocator.free(result.stdout);
+    defer child_allocator.free(result.stderr);
+
+    switch (result.term) {
+        .Exited => |code| if (code == 0) return error.ExpectedFailure,
+        else => return error.CommandFailed,
+    }
+
+    // Prefer stderr since Para reports errors there.
+    if (result.stderr.len > 0) return try allocator.dupe(u8, result.stderr);
     return try allocator.dupe(u8, result.stdout);
 }
 
@@ -587,6 +624,20 @@ fn testTimeType(allocator: std.mem.Allocator) !void {
     try testing.expectEqualStrings("1710434700000", outputs.items[1].value);
 }
 
+fn testTimeTypeInvalid(allocator: std.mem.Allocator) !void {
+    const err_month = try runParaCommandExpectFailure(allocator, "./test/build-checks/time_invalid_month.para");
+    defer allocator.free(err_month);
+    try testing.expect(std.mem.indexOf(u8, err_month, "Invalid time literal") != null);
+
+    const err_day = try runParaCommandExpectFailure(allocator, "./test/build-checks/time_invalid_day.para");
+    defer allocator.free(err_day);
+    try testing.expect(std.mem.indexOf(u8, err_day, "Invalid time literal") != null);
+
+    const err_tz = try runParaCommandExpectFailure(allocator, "./test/build-checks/time_invalid_tz.para");
+    defer allocator.free(err_tz);
+    try testing.expect(std.mem.indexOf(u8, err_tz, "Invalid time literal") != null);
+}
+
 fn testJsonGroupings(allocator: std.mem.Allocator) !void {
     const output = try runParaJsonCommand(allocator, "./test/build-checks/groupings.para");
     defer allocator.free(output);
@@ -734,6 +785,7 @@ test "para language tests" {
     runner.runTest("Sugar Syntax Test", testSugar);
     runner.runTest("Comment Newlines", testLineCommentsPreserveNewlines);
     runner.runTest("Time Type Test", testTimeType);
+    runner.runTest("Invalid Time Test", testTimeTypeInvalid);
     runner.runTest("JSON Grouping Test", testJsonGroupings);
     runner.runTest("JSON Big File Test", testJsonBigFile);
     runner.runTest("ZON Grouping Test", testZonGroupings);
