@@ -1,22 +1,22 @@
-person -> const age :: int is 50
+const person.age : int = 50
 
-person -> { 
-    const retirement :: int is 50 + 20
+person { 
+    const retirement : int = 50 + 20
 }
 
-const raise is 500
-const man is "Bob" 
+const raise = 500
+const man = "Bob" 
 
-person -> :: int {
-    job -> const salary is 15000  + raise
-    job -> const title :: string is "Bartender"
-    const name :: string is man
+person :: int {
+    const job.salary = 15000  + raise
+    const job.title : string = "Bartender"
+    const name : string = man
 }
 
 raise ?
 man ?
-person -> age ?
-person -> retirement ?
-person -> name ?
-person -> job -> salary ?
-person -> job -> title ?
+person.age ?
+person.retirement ?
+person.name ?
+person.job.salary ?
+person.job.title ?

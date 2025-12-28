@@ -303,11 +303,11 @@ fn testGroupAssignments(allocator: std.mem.Allocator) !void {
 
     const outputs = try parseOutput(output, allocator);
 
-    try testing.expectEqualStrings("person-> age", outputs.items[0].name);
+    try testing.expectEqualStrings("person.age", outputs.items[0].name);
     try testing.expectEqualStrings("int", outputs.items[0].type);
     try testing.expectEqualStrings("50", outputs.items[0].value);
 
-    try testing.expectEqualStrings("person-> job-> salary", outputs.items[1].name);
+    try testing.expectEqualStrings("person.job.salary", outputs.items[1].name);
     try testing.expectEqualStrings("int", outputs.items[1].type);
     try testing.expectEqualStrings("50000", outputs.items[1].value);
 
@@ -322,23 +322,23 @@ fn testBigFile(allocator: std.mem.Allocator) !void {
 
     const outputs = try parseOutput(output, allocator);
 
-    try testing.expectEqualStrings("person-> age", outputs.items[0].name);
+    try testing.expectEqualStrings("person.age", outputs.items[0].name);
     try testing.expectEqualStrings("int", outputs.items[0].type);
     try testing.expectEqualStrings("51", outputs.items[0].value);
 
-    try testing.expectEqualStrings("person-> job-> title", outputs.items[1].name);
+    try testing.expectEqualStrings("person.job.title", outputs.items[1].name);
     try testing.expectEqualStrings("string", outputs.items[1].type);
     try testing.expectEqualStrings("\"Painter\"", outputs.items[1].value);
 
-    try testing.expectEqualStrings("person-> job-> salary", outputs.items[2].name);
+    try testing.expectEqualStrings("person.job.salary", outputs.items[2].name);
     try testing.expectEqualStrings("float", outputs.items[2].type);
     try testing.expectEqualStrings("7e4", outputs.items[2].value);
 
-    try testing.expectEqualStrings("person-> name", outputs.items[3].name);
+    try testing.expectEqualStrings("person.name", outputs.items[3].name);
     try testing.expectEqualStrings("string", outputs.items[3].type);
     try testing.expectEqualStrings("\"Bob\"", outputs.items[3].value);
 
-    try testing.expectEqualStrings("person-> working", outputs.items[4].name);
+    try testing.expectEqualStrings("person.working", outputs.items[4].name);
     try testing.expectEqualStrings("bool", outputs.items[4].type);
     try testing.expectEqualStrings("TRUE", outputs.items[4].value);
 
@@ -365,23 +365,23 @@ fn testSugar(allocator: std.mem.Allocator) !void {
     try testing.expectEqualStrings("string", outputs.items[1].type);
     try testing.expectEqualStrings("\"Bob\"", outputs.items[1].value);
 
-    try testing.expectEqualStrings("person-> age", outputs.items[2].name);
+    try testing.expectEqualStrings("person.age", outputs.items[2].name);
     try testing.expectEqualStrings("int", outputs.items[2].type);
     try testing.expectEqualStrings("50", outputs.items[2].value);
 
-    try testing.expectEqualStrings("person-> retirement", outputs.items[3].name);
+    try testing.expectEqualStrings("person.retirement", outputs.items[3].name);
     try testing.expectEqualStrings("int", outputs.items[3].type);
     try testing.expectEqualStrings("70", outputs.items[3].value);
 
-    try testing.expectEqualStrings("person-> name", outputs.items[4].name);
+    try testing.expectEqualStrings("person.name", outputs.items[4].name);
     try testing.expectEqualStrings("string", outputs.items[4].type);
     try testing.expectEqualStrings("\"Bob\"", outputs.items[4].value);
 
-    try testing.expectEqualStrings("person-> job-> salary", outputs.items[5].name);
+    try testing.expectEqualStrings("person.job.salary", outputs.items[5].name);
     try testing.expectEqualStrings("int", outputs.items[5].type);
     try testing.expectEqualStrings("15500", outputs.items[5].value);
 
-    try testing.expectEqualStrings("person-> job-> title", outputs.items[6].name);
+    try testing.expectEqualStrings("person.job.title", outputs.items[6].name);
     try testing.expectEqualStrings("string", outputs.items[6].type);
     try testing.expectEqualStrings("\"Bartender\"", outputs.items[6].value);
 }

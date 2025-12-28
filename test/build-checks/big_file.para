@@ -1,40 +1,40 @@
-person -> var age :: int is 50
-person -> job -> var title :: string is "Painter"
-person -> job -> var salary :: float is 50000.00
-person -> var name :: string is "Bob"
-person -> var working :: bool is true
+var person.age: int = 50
+var person.job.title: string = "Painter"
+var person.job.salary: float = 50000.00
+var person.name: string = "Bob"
+var person.working: bool = true
 
-person -> { 
-    age :: int is 50
-    job -> { 
-        title :: string is "Painter"
-        salary :: float is 50000.00
+person { 
+    age = 50
+    job { 
+        title = "Painter"
+        salary = 50000.00
     } 
-    name :: string is "Bob"
-    working :: bool is true
+    name = "Bob"
+    working = true
 }
 
-person -> {
-    age is 50
-    name :: string is "Bob"
+person {
+    age = 50
+    name = "Bob"
 }
 
-temp var age is 10
-age is 15
+temp var age = 10
+age = 15
 
-temp const newSalary :: float is 10000.00 * (4 + 3)
-person -> job -> salary is newSalary
+temp const newSalary: float = 10000.00 * (4 + 3)
+person.job.salary = newSalary
 
-person -> age is 51
+person.age = 51
 
-person -> age ?
-person -> job -> title ?
-person -> job -> salary ?
-person -> name ?
-person -> working ?
+person.age ?
+person.job.title ?
+person.job.salary ?
+person.name ?
+person.working ?
 
 
-temp const y is person -> job -> salary
+temp const y = person.job.salary
 y ?
 
 5 ?

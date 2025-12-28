@@ -24,6 +24,7 @@ pub const ParsedToken = struct {
     token_number: usize,
     is_mutable: bool,
     is_temporary: bool,
+    has_decl_prefix: bool,
 
     pub fn deinit(self: *ParsedToken, allocator: std.mem.Allocator) void {
         if (self.expression) |expr| {
@@ -82,17 +83,10 @@ pub const Parser = struct {
             switch (current_token.token_type) {
                 .TKN_VAR => {
                     // After seeing `var`, the next token on this line must be
-                    // an identifier, and it cannot introduce a group via `->`.
+                    // an identifier.
                     if (!TokenKind.compare(self.tokens[current_index].token_type, .TKN_IDENTIFIER)) {
                         Reporting.throwError(
                             "VAR must be followed by an identifier (line {d}, token {d})\n",
-                            .{ current_token.line_number, current_token.token_number },
-                        );
-                        return error.InvalidVAR;
-                    }
-                    if (TokenKind.compare(self.tokens[current_index + 1].token_type, .TKN_ARROW)) {
-                        Reporting.throwError(
-                            "VAR cannot apply to a group (line {d}, token {d})\n",
                             .{ current_token.line_number, current_token.token_number },
                         );
                         return error.InvalidVAR;
@@ -102,17 +96,10 @@ pub const Parser = struct {
                 },
                 .TKN_CONST => {
                     // After seeing `const`, the next token on this line must be
-                    // an identifier, and it cannot introduce a group via `->`.
+                    // an identifier.
                     if (!TokenKind.compare(self.tokens[current_index].token_type, .TKN_IDENTIFIER)) {
                         Reporting.throwError(
                             "CONST must be followed by an identifier (line {d}, token {d})\n",
-                            .{ current_token.line_number, current_token.token_number },
-                        );
-                        return error.InvalidCONST;
-                    }
-                    if (TokenKind.compare(self.tokens[current_index + 1].token_type, .TKN_ARROW)) {
-                        Reporting.throwError(
-                            "CONST cannot apply to a group (line {d}, token {d})\n",
                             .{ current_token.line_number, current_token.token_number },
                         );
                         return error.InvalidCONST;
@@ -150,6 +137,7 @@ pub const Parser = struct {
                                 .token_number = current_token.token_number,
                                 .is_mutable = false,
                                 .is_temporary = false,
+                                .has_decl_prefix = false,
                             });
                         }
                         line_prefixed_with_groups = true;
@@ -176,6 +164,7 @@ pub const Parser = struct {
                                 .token_number = current_token.token_number,
                                 .is_mutable = false,
                                 .is_temporary = false,
+                                .has_decl_prefix = false,
                             });
                         }
                         continue;
@@ -195,6 +184,7 @@ pub const Parser = struct {
                             .token_number = current_token.token_number,
                             .is_mutable = self.is_mutable,
                             .is_temporary = self.is_temporary,
+                            .has_decl_prefix = self.has_decl_prefix,
                         });
                         if (self.tokens[current_index].token_type == .TKN_TYPE_ASSIGN) {
                             continue;
@@ -211,6 +201,7 @@ pub const Parser = struct {
                                     .token_number = current_token.token_number,
                                     .is_mutable = false,
                                     .is_temporary = false,
+                                    .has_decl_prefix = false,
                                 });
                             }
                         }
@@ -231,6 +222,7 @@ pub const Parser = struct {
                                 .token_number = current_token.token_number,
                                 .is_mutable = false,
                                 .is_temporary = false,
+                                .has_decl_prefix = false,
                             });
                         }
                         line_prefixed_with_groups = true;
@@ -252,6 +244,7 @@ pub const Parser = struct {
                             .token_number = current_token.token_number,
                             .is_mutable = false,
                             .is_temporary = false,
+                            .has_decl_prefix = false,
                         });
                         continue;
                     }
@@ -265,6 +258,7 @@ pub const Parser = struct {
                         .token_number = current_token.token_number,
                         .is_mutable = false,
                         .is_temporary = false,
+                        .has_decl_prefix = false,
                     });
                     continue;
                 },
@@ -279,6 +273,7 @@ pub const Parser = struct {
                         .token_number = current_token.token_number,
                         .is_mutable = false,
                         .is_temporary = false,
+                        .has_decl_prefix = false,
                     });
                     continue;
                 },
@@ -293,18 +288,37 @@ pub const Parser = struct {
                         .token_number = current_token.token_number,
                         .is_mutable = false,
                         .is_temporary = false,
+                        .has_decl_prefix = false,
                     });
                     continue;
                 },
                 .TKN_LBRACE => {
+                    // Enter a new group scope. We support two patterns:
+                    //   name { ... }
+                    //   name :: Type { ... }
                     var type_to_add: ?[]const u8 = null;
-                    var offset: u8 = 3; // default offset 3 for  group -> {
-                    if (self.tokens[current_index - 3].token_type == .TKN_TYPE_ASSIGN) {
+                    var name_index: ?usize = null;
+
+                    // Typed group: <identifier> :: <type> {
+                    if (current_index >= 4 and
+                        self.tokens[current_index - 3].token_type == .TKN_TYPE_ASSIGN and
+                        self.tokens[current_index - 2].token_type == .TKN_TYPE and
+                        self.tokens[current_index - 4].token_type == .TKN_IDENTIFIER)
+                    {
                         type_to_add = self.tokens[current_index - 2].literal;
-                        offset = 5; // offset 5 for group -> : type {
+                        name_index = current_index - 4;
                     }
-                    const token_to_add = self.tokens[current_index - offset];
-                    try self.groups.append(Group{ .name = token_to_add.literal, .type = type_to_add });
+                    // Untyped group: <identifier> {
+                    else if (current_index >= 2 and
+                        self.tokens[current_index - 2].token_type == .TKN_IDENTIFIER)
+                    {
+                        name_index = current_index - 2;
+                    }
+
+                    if (name_index) |idx| {
+                        const token_to_add = self.tokens[idx];
+                        try self.groups.append(Group{ .name = token_to_add.literal, .type = type_to_add });
+                    }
                     continue;
                 },
                 .TKN_RBRACE => {
@@ -334,6 +348,7 @@ pub const Parser = struct {
                             .token_number = current_token.token_number,
                             .is_mutable = false,
                             .is_temporary = false,
+                            .has_decl_prefix = false,
                         });
 
                         // Clone the tokens to ensure they remain valid
@@ -354,6 +369,7 @@ pub const Parser = struct {
                                 .token_number = current_token.token_number,
                                 .is_mutable = false,
                                 .is_temporary = false,
+                                .has_decl_prefix = false,
                             });
                         } else {
                             // If no expression tokens, don't add an expression token and free the allocated memory
@@ -372,15 +388,44 @@ pub const Parser = struct {
                             .token_number = current_token.token_number,
                             .is_mutable = false,
                             .is_temporary = false,
+                            .has_decl_prefix = false,
                         });
                     }
                     continue;
                 },
                 .TKN_TYPE_ASSIGN => {
-                    if (self.tokens[current_index - 2].token_type == .TKN_ARROW) {
-                        // this is a group -> : typing which would have been handled in the group -> identifier parsing
-                        continue;
+                    // Enforce that explicit type annotations (`::`) on value
+                    // declarations are only used when the line is prefixed
+                    // with `var` or `const`. Typed group scopes
+                    // (`name :: Type { ... }`) are exempt from this rule.
+
+                    var is_typed_group = false;
+                    const idx = current_index;
+                    if (idx >= 3 and idx < self.tokens.len) {
+                        const maybe_name = self.tokens[idx - 2];
+                        const maybe_type = self.tokens[idx];
+                        const maybe_lbrace = if (idx + 1 < self.tokens.len)
+                            self.tokens[idx + 1]
+                        else
+                            null;
+
+                        if (maybe_name.token_type == .TKN_IDENTIFIER and
+                            maybe_type.token_type == .TKN_TYPE and
+                            maybe_lbrace != null and maybe_lbrace.?.token_type == .TKN_LBRACE)
+                        {
+                            is_typed_group = true;
+                        }
                     }
+
+                    if (!is_typed_group and !self.has_decl_prefix) {
+                        Reporting.throwError(
+                            "Type annotation must be prefixed with var or const (line {d}, token {d})\n",
+                            .{ current_token.line_number, current_token.token_number },
+                        );
+                        return error.TypeAnnotationMissingVarOrConst;
+                    }
+
+                    // We never emit a token for `::` itself.
                     continue;
                 },
                 .TKN_NEWLINE => {
@@ -400,14 +445,14 @@ pub const Parser = struct {
                         .token_number = current_token.token_number,
                         .is_mutable = false,
                         .is_temporary = false,
+                        .has_decl_prefix = false,
                     });
                     continue;
                 },
                 .TKN_TYPE => {
-                    if (self.tokens[current_index - 3].token_type == .TKN_ARROW) {
-                        // this is a group -> : typing which would have been handled in the group -> identifier parsing
-                        continue;
-                    }
+                    // Standalone type tokens (e.g. in variable declarations) are
+                    // forwarded; group-level types are handled when entering the
+                    // corresponding `{` block.
                     try self.parsed_tokens.append(ParsedToken{
                         .token_type = .TKN_TYPE,
                         .literal = current_token.literal,
@@ -418,6 +463,7 @@ pub const Parser = struct {
                         .token_number = current_token.token_number,
                         .is_mutable = false,
                         .is_temporary = false,
+                        .has_decl_prefix = false,
                     });
                     continue;
                 },
@@ -434,6 +480,7 @@ pub const Parser = struct {
                         .token_number = current_token.token_number,
                         .is_mutable = false,
                         .is_temporary = false,
+                        .has_decl_prefix = false,
                     });
                     continue;
                 },
@@ -448,6 +495,7 @@ pub const Parser = struct {
                         .token_number = current_token.token_number,
                         .is_mutable = false,
                         .is_temporary = false,
+                        .has_decl_prefix = false,
                     });
                     continue;
                 },
@@ -465,6 +513,7 @@ pub const Parser = struct {
                         .token_number = current_token.token_number,
                         .is_mutable = false,
                         .is_temporary = false,
+                        .has_decl_prefix = false,
                     });
                     continue;
                 },
@@ -479,6 +528,7 @@ pub const Parser = struct {
                         .token_number = current_token.token_number,
                         .is_mutable = false,
                         .is_temporary = false,
+                        .has_decl_prefix = false,
                     });
                     continue;
                 },
@@ -493,6 +543,7 @@ pub const Parser = struct {
                         .token_number = current_token.token_number,
                         .is_mutable = false,
                         .is_temporary = false,
+                        .has_decl_prefix = false,
                     });
                     continue;
                 },
@@ -507,6 +558,7 @@ pub const Parser = struct {
                         .token_number = current_token.token_number,
                         .is_mutable = false,
                         .is_temporary = false,
+                        .has_decl_prefix = false,
                     });
                     continue;
                 },
@@ -521,6 +573,7 @@ pub const Parser = struct {
                         .token_number = current_token.token_number,
                         .is_mutable = false,
                         .is_temporary = false,
+                        .has_decl_prefix = false,
                     });
                     continue;
                 },
@@ -535,6 +588,7 @@ pub const Parser = struct {
                         .token_number = current_token.token_number,
                         .is_mutable = false,
                         .is_temporary = false,
+                        .has_decl_prefix = false,
                     });
                     continue;
                 },

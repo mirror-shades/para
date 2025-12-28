@@ -29,7 +29,7 @@ pub const Value = union(ValueType) {
 pub const TokenKind = enum {
     TKN_IDENTIFIER, // variable/group names
     TKN_TYPE_ASSIGN, // :
-    TKN_ARROW, // ->
+    TKN_ARROW, // . (path separator)
     TKN_VALUE_ASSIGN, // =
     TKN_SLASH, // /
     TKN_STAR, // *

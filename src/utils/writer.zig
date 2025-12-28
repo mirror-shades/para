@@ -23,7 +23,7 @@ pub fn writeFlatFile(tokens: []ParsedToken) !void {
 
         switch (token.token_type) {
             .TKN_GROUP => {
-                try writer.print("{s}-> ", .{token.literal});
+                try writer.print("{s}.", .{token.literal});
             },
             .TKN_TYPE => {
                 try writer.print(":{s} ", .{token.literal});
@@ -88,7 +88,7 @@ pub fn writeBakedFile(tokens: []ParsedToken, preprocessor: *Preprocessor, alloca
             .TKN_GROUP => {
                 // Handle groups for current line
                 try current_line_scopes.append(current_token.literal);
-                try writer.print("{s}-> ", .{current_token.literal});
+                try writer.print("{s}.", .{current_token.literal});
             },
             .TKN_IDENTIFIER => {
                 // Write identifier

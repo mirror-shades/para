@@ -17,8 +17,8 @@ Para is a minimalist data representation language designed for clear, typed data
 ## Syntax Rules
 
 - Every line starts with an identifier (variable or group).
-- Variables are declared with `::` followed by a type and value.
-- Groups are declared with `->` and contain nested variables or groups.
+- Variables are declared with `:` followed by a type and `=` value.
+- Groups are formed using dotted paths (e.g. `person.age`, `person.job.salary`) and can be opened as scopes with braces (e.g. `person { ... }`).
 - Statements end with a newline or EOF; whitespace and empty lines are ignored.
 - Identifiers must be unique within their scope (e.g., a variable and group cannot share a name).
 - All variables must be initialized; uninitialized declarations are a compile-time error.
@@ -43,36 +43,36 @@ Para has five fixed types. Variables must be explicitly declared as `var` (mutab
 
 ```para
 // int is an i64
-x :: int is 18
+var x : int = 18
 ```
 
 ### Float
 
 ```para
 // float is a f64
-y :: float is 3.14
+var y : float = 3.14
 ```
 
 ### String
 
 ```para
 // string is a []u8
-z :: string is "hello world"
+var z : string = "hello world"
 ```
 
 ### Boolean
 
 ```para
 // bool is a bool
-logics :: bool is true
+var logics : bool = true
 ```
 
 ### Time
 
 ```para
 // time is a i64 but the front end can handle ISO conversion
-created :: time is 17453900000
-updated :: time is "2024-03-14T16::45::00Z"
+var created : time = 17453900000
+var updated : time = "2024-03-14T16:45:00Z"
 ```
 
 ### Variables and Constants
@@ -81,16 +81,16 @@ Variables must be explicitly declared as mutable or immutable:
 
 ```para
 // Mutable variables (can be reassigned)
-var x :: int is 42
+var x : int = 42
 x = 50  // This works
 
 // Immutable constants (cannot be reassigned)
-const id :: int is 567
+const id : int = 567
 id = 600  // This errors
 
 // Temporary variables (dropped during preprocessing)
-temp var intermediate :: int is 100
-temp const constant_temp :: string is "temporary"
+temp var intermediate : int = 100
+temp const constant_temp : string = "temporary"
 ```
 
 ## Variable References
@@ -99,8 +99,8 @@ Variables can reference other variables:
 
 ```para
 // internal reference is allowed
-x :: int is 5
-nested :: int is x
+const x : int = 5
+const nested : int = x
 ```
 
 ## Complex Types
@@ -110,11 +110,11 @@ Para has one complex type called a "group", similar to a struct in other languag
 ### Basic Group Usage
 
 ```para
-person -> age :: int is 25
-person -> name :: string is "Bob"
+person.age : int = 25
+person.name : string = "Bob"
 
 // nested groupings are allowed as well
-bigNest -> littleNest -> member1 :: int is 5
+bigNest.littleNest.member1 : int = 5
 ```
 
 ### Group Scopes
@@ -123,18 +123,18 @@ Groups can be written using scope syntax for better readability:
 
 ```para
 // this
-bigNest -> {
-    littleNest -> {
-        member1 :: int is 10
+bigNest {
+    littleNest {
+        member1 : int = 10
     }
-    member2 :: int is 2
-    member3 :: int is 3
+    member2 : int = 2
+    member3 : int = 3
 }
 
 // reduces to
-bigNest -> littleNest -> member1 :: int is 10
-bigNest -> member2 :: int is 2
-bigNest -> member3 :: int is 3
+bigNest.littleNest.member1 : int = 10
+bigNest.member2 : int = 2
+bigNest.member3 : int = 3
 ```
 
 ### Typed Group Scopes
@@ -143,14 +143,14 @@ Groups can enforce types for their members:
 
 ```para
 // this
-nest -> :: int {
-    member1 is 10
-    member2 is 20
+nest : int {
+    const member1 = 10
+    const member2 = 20
 }
 
 // reduces to
-nest -> member1 :: int is 10
-nest -> member2 :: int is 20
+const nest.member1 : int = 10
+const nest.member2 : int = 20
 ```
 
 ## Preprocessing Steps
@@ -162,12 +162,12 @@ Para files go through several preprocessing steps for flexibility and optimizati
 Configs are flexible - as long as values are initialized before use, they can be referenced:
 
 ```para
-defaults -> age :: int is 25
-new_age :: int is defaults -> age
-person -> age :: int is new_age
-person -> name :: string is "Robert"
-nickname :: string is "Bob"
-person -> nickname is nickname
+defaults.age : int = 25
+new_age : int = defaults.age
+person.age : int = new_age
+person.name : string = "Robert"
+nickname : string = "Bob"
+person.nickname = nickname
 ```
 
 ### Step 2: Baked Values
@@ -175,12 +175,12 @@ person -> nickname is nickname
 This is the minilal level Para can be used. All values are resolved before runtime:
 
 ```para
-defaults -> age :: int is 25
-new_age :: int is 25
-person -> age :: int is 25
-person -> name :: string is "Robert"
-nickname :: string is "Bob"
-person -> nickname is "Bob"
+defaults.age : int = 25
+new_age : int = 25
+person.age : int = 25
+person.name : string = "Robert"
+nickname : string = "Bob"
+person.nickname = "Bob"
 ```
 
 ### Step 3: Compressed Values
@@ -188,14 +188,14 @@ person -> nickname is "Bob"
 An additional step can be done to compress values. Globals are raised and groups are unified:
 
 ```para
-new_age :: int is 25
-nickname :: string is "Bob"
+new_age : int = 25
+nickname : string = "Bob"
 
-defaults -> age :: int is 25
-person -> {
-    age :: int is 25
-    name :: string is "Robert"
-    nickname is "Bob"
+defaults.age : int = 25
+person {
+    age : int = 25
+    name : string = "Robert"
+    nickname = "Bob"
 }
 ```
 

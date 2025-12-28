@@ -203,29 +203,6 @@ pub const Lexer = struct {
                 continue;
             }
 
-            if (c == 'i') {
-                // Detect standalone 'is' as a value-assign token
-                if (self.peekNext() == 's') {
-                    const after_s: ?u8 = if (self.pos + 2 < self.input.len) self.input[self.pos + 2] else null;
-                    const is_word_char = if (after_s) |ch| ((ch >= 'a' and ch <= 'z') or (ch >= 'A' and ch <= 'Z') or (ch >= '0' and ch <= '9') or ch == '_') else false;
-                    if (!is_word_char) {
-                        const current_column = self.column;
-                        self.advance(); // consume 'i'
-                        self.advance(); // consume 's'
-                        try self.tokens.append(.{
-                            .literal = "=",
-                            .token_type = .TKN_VALUE_ASSIGN,
-                            .value_type = .nothing,
-                            .line_number = self.line,
-                            .token_number = current_column,
-                        });
-                        self.token_count += 1;
-                        self.assignment_mode = true;
-                        continue;
-                    }
-                }
-            }
-
             // Fast-path handling for common leading letters used by
             // type/value keywords and the `temp` declaration modifier.
             if (c == 'i' or c == 's' or c == 'b' or c == 'f' or c == 't' or c == 'f' or c == 'T' or c == 'F' or c == 'I' or c == 'F' or c == 'S' or c == 'B') {
@@ -303,44 +280,57 @@ pub const Lexer = struct {
             // Process actual tokens
             switch (c) {
                 ':' => {
-                    if (self.peek() == ':') {
-                        const current_column = self.column;
-                        try self.tokens.append(.{
-                            .literal = ":",
-                            .token_type = .TKN_TYPE_ASSIGN,
-                            .value_type = .nothing,
-                            .line_number = self.line,
-                            .token_number = current_column,
-                        });
-                        self.token_count += 1;
-                        self.advance();
-                        self.advance();
-                    }
+                    const current_column = self.column;
+                    self.advance();
+                    try self.tokens.append(.{
+                        .literal = ":",
+                        .token_type = .TKN_TYPE_ASSIGN,
+                        .value_type = .nothing,
+                        .line_number = self.line,
+                        .token_number = current_column,
+                    });
+                    self.token_count += 1;
+                },
+                '=' => {
+                    const current_column = self.column;
+                    self.advance();
+                    try self.tokens.append(.{
+                        .literal = "=",
+                        .token_type = .TKN_VALUE_ASSIGN,
+                        .value_type = .nothing,
+                        .line_number = self.line,
+                        .token_number = current_column,
+                    });
+                    self.token_count += 1;
+                    self.assignment_mode = true;
                 },
                 '-' => {
                     const current_column = self.column;
-                    if (self.pos + 1 < self.input.len and self.input[self.pos + 1] == '>') {
-                        try self.tokens.append(.{
-                            .literal = "->",
-                            .token_type = .TKN_ARROW,
-                            .value_type = .nothing,
-                            .line_number = self.line,
-                            .token_number = current_column,
-                        });
-                        self.token_count += 1;
-                        self.advance();
-                        self.advance();
-                    } else {
-                        try self.tokens.append(.{
-                            .literal = "-",
-                            .token_type = .TKN_MINUS,
-                            .value_type = .nothing,
-                            .line_number = self.line,
-                            .token_number = current_column,
-                        });
-                        self.token_count += 1;
-                        self.advance();
-                    }
+                    try self.tokens.append(.{
+                        .literal = "-",
+                        .token_type = .TKN_MINUS,
+                        .value_type = .nothing,
+                        .line_number = self.line,
+                        .token_number = current_column,
+                    });
+                    self.token_count += 1;
+                    self.advance();
+                },
+                '.' => {
+                    // Dot is used as a path separator for group/field access.
+                    // Numeric literals with a decimal point are handled entirely
+                    // inside readNumber(), so this branch only runs when the dot
+                    // stands alone as a token.
+                    const current_column = self.column;
+                    try self.tokens.append(.{
+                        .literal = ".",
+                        .token_type = .TKN_ARROW,
+                        .value_type = .nothing,
+                        .line_number = self.line,
+                        .token_number = current_column,
+                    });
+                    self.token_count += 1;
+                    self.advance();
                 },
                 '+' => {
                     const current_column = self.column;

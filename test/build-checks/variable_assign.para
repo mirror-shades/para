@@ -1,8 +1,8 @@
-const int_assign is 5
-const expression_assign is 5+5
-const float_assign is 5.5
-const bool_assign is true
-const string_assign is "hello"
+const int_assign = 5
+const expression_assign = 5+5
+const float_assign = 5.5
+const bool_assign = true
+const string_assign = "hello"
 
 int_assign?
 expression_assign?

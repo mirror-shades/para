@@ -15,6 +15,7 @@ pub const Preprocessor = struct {
         type: ValueType,
         mutable: bool,
         temp: bool,
+        has_decl_prefix: bool,
         /// Source location for diagnostics
         line_number: usize,
         token_number: usize,
@@ -269,6 +270,7 @@ pub const Preprocessor = struct {
                     .type = .nothing,
                     .mutable = false,
                     .temp = false,
+                    .has_decl_prefix = false,
                     .line_number = t.line_number,
                     .token_number = t.token_number,
                 });
@@ -300,6 +302,7 @@ pub const Preprocessor = struct {
                     .type = .nothing,
                     .mutable = id_tok.is_mutable,
                     .temp = id_tok.is_temporary,
+                    .has_decl_prefix = id_tok.has_decl_prefix,
                     .line_number = id_tok.line_number,
                     .token_number = id_tok.token_number,
                 });
@@ -314,6 +317,7 @@ pub const Preprocessor = struct {
                     .type = .nothing,
                     .mutable = id_tok.is_mutable,
                     .temp = id_tok.is_temporary,
+                    .has_decl_prefix = id_tok.has_decl_prefix,
                     .line_number = id_tok.line_number,
                     .token_number = id_tok.token_number,
                 });
@@ -343,6 +347,7 @@ pub const Preprocessor = struct {
                 .type = .int,
                 .mutable = false,
                 .temp = false,
+                .has_decl_prefix = false,
                 .line_number = assign_tok.line_number,
                 .token_number = assign_tok.token_number,
             });
@@ -357,6 +362,7 @@ pub const Preprocessor = struct {
                 .type = val_tok.value_type,
                 .mutable = identifier.mutable, // Use the mutability from the identifier
                 .temp = val_tok.is_temporary,
+                .has_decl_prefix = false,
                 .line_number = val_tok.line_number,
                 .token_number = val_tok.token_number,
             });
@@ -376,14 +382,6 @@ pub const Preprocessor = struct {
             } else |err| {
                 // Get the LHS groups by excluding the last item (which is the identifier)
                 const lhs_groups = if (result.items.len > 0) result.items[0 .. result.items.len - 1] else &[_]Variable{};
-
-                // Debug print the LHS groups
-                var lhs_str = std.ArrayList(u8).init(self.allocator);
-                defer lhs_str.deinit();
-                for (lhs_groups, 0..) |g, j| {
-                    if (j > 0) try lhs_str.appendSlice("->");
-                    try lhs_str.appendSlice(g.name);
-                }
 
                 // Check if the RHS path starts with our LHS groups
                 var lhs_prefix_matches_rhs_path = true;
@@ -471,7 +469,7 @@ pub const Preprocessor = struct {
             var path_str = std.ArrayList(u8).init(self.allocator);
             defer path_str.deinit();
             for (path[0 .. path.len - 1], 0..) |part, i| {
-                if (i > 0) try path_str.appendSlice(" -> ");
+                if (i > 0) try path_str.appendSlice(".");
                 try path_str.appendSlice(part);
             }
             return error.VariableNotFoundInScope;
@@ -529,6 +527,19 @@ pub const Preprocessor = struct {
 
         // Step 2: Check if variable already exists
         if (target_scope.variables.get(identifier.name)) |existing_var| {
+            // Disallow using a declaration prefix (var/const/temp) on an
+            // identifier that already exists in this scope.
+            if (identifier.has_decl_prefix) {
+                if (self.source_lines.len > 0) {
+                    self.underlineAt(identifier.line_number, identifier.token_number, identifier.name.len);
+                }
+                Reporting.throwError(
+                    "Error: Cannot redeclare existing name '{s}' with var/const (line {d}, token {d})\n",
+                    .{ identifier.name, identifier.line_number, identifier.token_number },
+                );
+                return error.RedeclarationNotAllowed;
+            }
+
             // Check mutability
             if (!existing_var.mutable) {
                 if (self.source_lines.len > 0) {
@@ -581,6 +592,7 @@ pub const Preprocessor = struct {
             .type = declared_type,
             .mutable = final_mutable,
             .temp = final_temp,
+            .has_decl_prefix = identifier.has_decl_prefix,
             .line_number = identifier.line_number,
             .token_number = identifier.token_number,
         };
@@ -935,7 +947,7 @@ pub const Preprocessor = struct {
 
                             for (path, 0..) |part, idx| {
                                 if (idx > 0) {
-                                    try buffer.appendSlice("-> ");
+                                    try buffer.appendSlice(".");
                                 }
                                 try buffer.appendSlice(part);
                             }
@@ -1003,7 +1015,7 @@ pub const Preprocessor = struct {
     }
 
     fn dumpScope(scope_name: []const u8, scope: *Scope, prefix: []const u8, allocator: std.mem.Allocator) !void {
-        const new_prefix = try std.fmt.allocPrint(allocator, "{s}{s}->", .{ prefix, scope_name });
+        const new_prefix = try std.fmt.allocPrint(allocator, "{s}{s}.", .{ prefix, scope_name });
         defer allocator.free(new_prefix);
 
         Reporting.log("\n.----------------------------------------.\n", .{});
