@@ -2,7 +2,7 @@ var person.age: int = 50
 var person.job.title: string = "Painter"
 var person.job.salary: float = 50000.00
 var person.name: string = "Bob"
-var person.working: bool = true
+var person.working: bool = false
 
 person { 
     age = 50
@@ -11,7 +11,7 @@ person {
         salary = 50000.00
     } 
     name = "Bob"
-    working = true
+    working = !person.working
 }
 
 person {

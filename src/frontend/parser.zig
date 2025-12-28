@@ -627,7 +627,8 @@ fn ifExpression(tokens: []Token) bool {
 }
 
 fn isExpressionToken(token: Token) bool {
-    return token.token_type == .TKN_PLUS or
+    return token.token_type == .TKN_EXCLAIM or
+        token.token_type == .TKN_PLUS or
         token.token_type == .TKN_MINUS or
         token.token_type == .TKN_STAR or
         token.token_type == .TKN_SLASH or

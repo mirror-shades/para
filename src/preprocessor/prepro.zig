@@ -600,6 +600,50 @@ pub const Preprocessor = struct {
         try target_scope.variables.put(identifier.name, variable);
     }
 
+    fn buildExpressionLookupPath(self: *Preprocessor, expr_tokens: []Token, lookup_token: Token) ![][]const u8 {
+        var path = std.ArrayList([]const u8).init(self.allocator);
+        defer path.deinit();
+
+        // Locate the lookup token in the original infix expression.
+        var start_index_opt: ?usize = null;
+        for (expr_tokens, 0..) |t, idx| {
+            if (t.token_type == lookup_token.token_type and
+                t.line_number == lookup_token.line_number and
+                t.token_number == lookup_token.token_number and
+                std.mem.eql(u8, t.literal, lookup_token.literal))
+            {
+                start_index_opt = idx;
+                break;
+            }
+        }
+
+        if (start_index_opt == null) {
+            // Fallback: treat the lookup as a single-segment name.
+            try path.append(lookup_token.literal);
+        } else {
+            const start_index = start_index_opt.?;
+
+            // First segment in the path.
+            try path.append(expr_tokens[start_index].literal);
+
+            // Walk forward to collect `.segment` pieces, e.g. person.job.salary.
+            var j = start_index + 1;
+            while (j + 1 < expr_tokens.len and
+                expr_tokens[j].token_type == .TKN_ARROW and
+                (expr_tokens[j + 1].token_type == .TKN_LOOKUP or expr_tokens[j + 1].token_type == .TKN_IDENTIFIER))
+            {
+                try path.append(expr_tokens[j + 1].literal);
+                j += 2;
+            }
+        }
+
+        const result = try self.allocator.alloc([]const u8, path.items.len);
+        for (path.items, 0..) |part, idx| {
+            result[idx] = part;
+        }
+        return result;
+    }
+
     fn evaluateExpression(self: *Preprocessor, tokens: []Token) !Value {
         if (tokens.len == 0) {
             if (self.source_lines.len > 0 and tokens.len > 0) {
@@ -620,6 +664,7 @@ pub const Preprocessor = struct {
         const getPrecedence = struct {
             fn get(token_type: TokenKind) u8 {
                 return switch (token_type) {
+                    .TKN_EXCLAIM => 4,
                     .TKN_POWER => 3,
                     .TKN_STAR, .TKN_SLASH, .TKN_PERCENT => 2,
                     .TKN_PLUS, .TKN_MINUS => 1,
@@ -629,12 +674,33 @@ pub const Preprocessor = struct {
         }.get;
 
         // First pass: Convert to postfix notation
-        for (tokens) |token| {
+        var idx: usize = 0;
+        while (idx < tokens.len) : (idx += 1) {
+            const token = tokens[idx];
+
             if (token.token_type == .TKN_VALUE) {
                 output.append(token) catch unreachable;
             } else if (token.token_type == .TKN_LOOKUP) {
-                // Handle variables by looking them up
+                // Treat this as the start of a dotted path like person.job.salary.
+                // We only emit a single lookup token into the output and skip the
+                // subsequent `.segment` pieces here; the full path is reconstructed
+                // later using the original infix tokens.
                 output.append(token) catch unreachable;
+
+                var lookahead = idx + 1;
+                while (lookahead + 1 < tokens.len and
+                    tokens[lookahead].token_type == .TKN_ARROW and
+                    (tokens[lookahead + 1].token_type == .TKN_LOOKUP or
+                    tokens[lookahead + 1].token_type == .TKN_IDENTIFIER))
+                {
+                    lookahead += 2;
+                }
+                if (lookahead > idx + 1) {
+                    idx = lookahead - 1;
+                }
+            } else if (token.token_type == .TKN_EXCLAIM) {
+                // Unary not, highest precedence; just push onto operator stack.
+                stack.append(token) catch unreachable;
             } else if (token.token_type == .TKN_PLUS or token.token_type == .TKN_MINUS or
                 token.token_type == .TKN_STAR or token.token_type == .TKN_SLASH or
                 token.token_type == .TKN_PERCENT or token.token_type == .TKN_POWER)
@@ -675,7 +741,9 @@ pub const Preprocessor = struct {
         var result_stack = std.ArrayList(Value).init(self.allocator);
         defer result_stack.deinit();
 
-        for (output.items) |token| {
+        var i: usize = 0;
+        while (i < output.items.len) : (i += 1) {
+            const token = output.items[i];
             switch (token.token_type) {
                 .TKN_VALUE => {
                     // Push the value onto the stack
@@ -689,19 +757,79 @@ pub const Preprocessor = struct {
                     result_stack.append(value) catch unreachable;
                 },
                 .TKN_LOOKUP => {
-                    // Look up the variable value and push onto the stack
-                    var found = false;
-                    if (self.findVariableByName(&self.root_scope, token.literal)) |resolved| {
-                        result_stack.append(resolved.value) catch unreachable;
-                        found = true;
-                    }
+                    // Resolve a variable or dotted path (person.job.salary) using
+                    // the same scoped lookup rules as assignments.
+                    const path = try self.buildExpressionLookupPath(tokens, token);
+                    defer self.allocator.free(path);
 
-                    if (!found) {
+                    const maybe_var = self.getLookupValue(path) catch {
                         if (self.source_lines.len > 0) {
                             self.underlineAt(token.line_number, token.token_number, token.literal.len);
                         }
-                        Reporting.throwError("Error: Variable '{s}' not found in expression, using 0 (line {d}, token {d})\n", .{ token.literal, token.line_number, token.token_number });
+                        // Build a dotted path string for diagnostics.
+                        var buf = std.ArrayList(u8).init(self.allocator);
+                        defer buf.deinit();
+                        for (path, 0..) |segment, seg_idx| {
+                            if (seg_idx > 0) buf.appendSlice(".") catch unreachable;
+                            buf.appendSlice(segment) catch unreachable;
+                        }
+                        Reporting.throwError(
+                            "Error: Variable '{s}' not found in expression, using 0 (line {d}, token {d})\n",
+                            .{ buf.items, token.line_number, token.token_number },
+                        );
                         return error.VariableNotFoundInExpression;
+                    };
+
+                    if (maybe_var) |resolved| {
+                        result_stack.append(resolved.value) catch unreachable;
+                    } else {
+                        if (self.source_lines.len > 0) {
+                            self.underlineAt(token.line_number, token.token_number, token.literal.len);
+                        }
+                        var buf = std.ArrayList(u8).init(self.allocator);
+                        defer buf.deinit();
+                        for (path, 0..) |segment, seg_idx| {
+                            if (seg_idx > 0) buf.appendSlice(".") catch unreachable;
+                            buf.appendSlice(segment) catch unreachable;
+                        }
+                        Reporting.throwError(
+                            "Error: Variable '{s}' not found in expression, using 0 (line {d}, token {d})\n",
+                            .{ buf.items, token.line_number, token.token_number },
+                        );
+                        return error.VariableNotFoundInExpression;
+                    }
+                },
+                .TKN_EXCLAIM => {
+                    // Unary logical NOT. Expect a single operand.
+                    if (result_stack.items.len < 1) {
+                        if (self.source_lines.len > 0) {
+                            self.underlineAt(token.line_number, token.token_number, token.literal.len);
+                        }
+                        Reporting.throwError(
+                            "Error: Not enough operands for operator {s} (line {d}, token {d})\n",
+                            .{ token.literal, token.line_number, token.token_number },
+                        );
+                        return error.NotEnoughOperands;
+                    }
+
+                    const value_index = result_stack.items.len - 1;
+                    const v = result_stack.items[value_index];
+
+                    switch (v) {
+                        .bool => |b| {
+                            // Replace in place with inverted bool
+                            result_stack.items[value_index] = Value{ .bool = !b };
+                        },
+                        else => {
+                            if (self.source_lines.len > 0) {
+                                self.underlineAt(token.line_number, token.token_number, token.literal.len);
+                            }
+                            Reporting.throwError(
+                                "Error: Logical not (!) only supported on bool values (line {d}, token {d})\n",
+                                .{ token.line_number, token.token_number },
+                            );
+                            return error.NonNumericValue;
+                        },
                     }
                 },
                 .TKN_PLUS, .TKN_MINUS, .TKN_STAR, .TKN_SLASH, .TKN_PERCENT, .TKN_POWER => {
