@@ -553,10 +553,6 @@ pub const Lexer = struct {
         self.token_count += 1;
     }
 
-    fn isKeyword(self: *Lexer) bool {
-        return token.keywords.get(self.input[self.pos..]) != null;
-    }
-
     fn readString(self: *Lexer) !void {
         const start = self.pos;
         const current_column = self.column;

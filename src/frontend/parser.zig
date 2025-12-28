@@ -355,7 +355,7 @@ pub const Parser = struct {
                             });
                         } else {
                             self.allocator.free(expression_tokens);
-                            printError("Warning: Empty expression detected\n", .{});
+                            printError("Empty expression detected\n", .{});
                             return error.EmptyExpression;
                         }
                     } else {

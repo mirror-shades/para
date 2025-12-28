@@ -1,6 +1,4 @@
 const std = @import("std");
-const lexer = @import("frontend/lexer.zig");
-const token = @import("token/token.zig");
 const Lexer = @import("frontend/lexer.zig").Lexer;
 const Parser = @import("frontend/parser.zig").Parser;
 const ast = @import("token/ast.zig");
@@ -13,16 +11,6 @@ const zon_backend = @import("backend/zon.zig");
 const yaml_backend = @import("backend/yaml.zig");
 const toml_backend = @import("backend/toml.zig");
 const ron_backend = @import("backend/ron.zig");
-
-fn getDisplayText(token_kind: token.TokenKind, token_text: []const u8) []const u8 {
-    return switch (token_kind) {
-        .TKN_NEWLINE => "\\n",
-        .TKN_TYPE_ASSIGN => ":",
-        .TKN_VALUE_ASSIGN => "=",
-        .TKN_EOF => "EOF",
-        else => token_text,
-    };
-}
 
 pub fn main() !void {
     var debug_lexer = false;

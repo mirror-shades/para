@@ -364,7 +364,7 @@ pub const Preprocessor = struct {
                 self.underlineAt(t.line_number, t.token_number, t.literal.len);
             }
             Reporting.throwError(
-                "Error: No lookup found before assignment at token index {d} (line {d}, token {d})\n",
+                "No lookup found before assignment at token index {d} (line {d}, token {d})\n",
                 .{ index, tokens[index].line_number, tokens[index].token_number },
             );
             return error.InvalidAssignment;
@@ -463,7 +463,10 @@ pub const Preprocessor = struct {
                 const t = tokens[index];
                 self.underlineAt(t.line_number, t.token_number, t.literal.len);
             }
-            Reporting.throwError("Warning: No value found after assignment, using default\n", .{});
+            Reporting.throwError(
+                "No value found after assignment (line {d}, token {d})\n",
+                .{ tokens[index].line_number, tokens[index].token_number },
+            );
             return error.NoValueFoundAfterAssignment;
         }
 
@@ -554,7 +557,7 @@ pub const Preprocessor = struct {
                     self.underlineAt(identifier.line_number, identifier.token_number, identifier.name.len);
                 }
                 Reporting.throwError(
-                    "Error: Cannot redeclare existing name '{s}' with var/const (line {d}, token {d})\n",
+                    "Cannot redeclare existing name '{s}' with var/const (line {d}, token {d})\n",
                     .{ identifier.name, identifier.line_number, identifier.token_number },
                 );
                 return error.RedeclarationNotAllowed;
@@ -565,7 +568,7 @@ pub const Preprocessor = struct {
                     self.underlineAt(identifier.line_number, identifier.token_number, identifier.name.len);
                 }
                 Reporting.throwError(
-                    "Error: Cannot reassign immutable variable '{s}' (assignment to '{s}' at line {d}, token {d})\n",
+                    "Cannot reassign immutable variable '{s}' (assignment to '{s}' at line {d}, token {d})\n",
                     .{ identifier.name, identifier.name, identifier.line_number, identifier.token_number },
                 );
                 return error.ImmutableVariable;
@@ -576,7 +579,7 @@ pub const Preprocessor = struct {
                     self.underlineAt(identifier.line_number, identifier.token_number, identifier.name.len);
                 }
                 Reporting.throwError(
-                    "Error: Cannot assign {s} value to variable '{s}' of type {s} (line {d}, token {d})\n",
+                    "Cannot assign {s} value to variable '{s}' of type {s} (line {d}, token {d})\n",
                     .{ value_item.type.toString(), identifier.name, existing_var.type.toString(), identifier.line_number, identifier.token_number },
                 );
                 return error.TypeMismatch;
@@ -593,7 +596,7 @@ pub const Preprocessor = struct {
                         self.underlineAt(identifier.line_number, identifier.token_number, identifier.name.len);
                     }
                     Reporting.throwError(
-                        "Error: Cannot initialize {s} variable '{s}' with {s} value (line {d}, token {d})\n",
+                        "Cannot initialize {s} variable '{s}' with {s} value (line {d}, token {d})\n",
                         .{ declared_type.toString(), identifier.name, value_item.type.toString(), identifier.line_number, identifier.token_number },
                     );
                     return error.TypeMismatch;
@@ -658,12 +661,8 @@ pub const Preprocessor = struct {
 
     fn evaluateExpression(self: *Preprocessor, tokens: []Token) !Value {
         if (tokens.len == 0) {
-            if (self.source_lines.len > 0 and tokens.len > 0) {
-                const t = tokens[0];
-                self.underlineAt(t.line_number, t.token_number, t.literal.len);
-            }
-            Reporting.throwError("Error: Empty expression (line {d}, token {d})\n", .{ tokens[0].line_number, tokens[0].token_number });
-            return Value{ .int = 0 };
+            Reporting.throwError("Empty expression\n", .{});
+            return error.EmptyExpression;
         }
 
         // Use the shunting yard algorithm to convert infix to postfix
@@ -784,7 +783,7 @@ pub const Preprocessor = struct {
                             try buf.appendSlice(self.allocator, segment);
                         }
                         Reporting.throwError(
-                            "Error: Variable '{s}' not found in expression, using 0 (line {d}, token {d})\n",
+                            "Variable '{s}' not found in expression (line {d}, token {d})\n",
                             .{ buf.items, token.line_number, token.token_number },
                         );
                         return error.VariableNotFoundInExpression;
@@ -803,7 +802,7 @@ pub const Preprocessor = struct {
                             try buf.appendSlice(self.allocator, segment);
                         }
                         Reporting.throwError(
-                            "Error: Variable '{s}' not found in expression, using 0 (line {d}, token {d})\n",
+                            "Variable '{s}' not found in expression (line {d}, token {d})\n",
                             .{ buf.items, token.line_number, token.token_number },
                         );
                         return error.VariableNotFoundInExpression;
@@ -815,7 +814,7 @@ pub const Preprocessor = struct {
                             self.underlineAt(token.line_number, token.token_number, token.literal.len);
                         }
                         Reporting.throwError(
-                            "Error: Not enough operands for operator {s} (line {d}, token {d})\n",
+                            "Not enough operands for operator {s} (line {d}, token {d})\n",
                             .{ token.literal, token.line_number, token.token_number },
                         );
                         return error.NotEnoughOperands;
@@ -833,7 +832,7 @@ pub const Preprocessor = struct {
                                 self.underlineAt(token.line_number, token.token_number, token.literal.len);
                             }
                             Reporting.throwError(
-                                "Error: Logical not (!) only supported on bool values (line {d}, token {d})\n",
+                                "Logical not (!) only supported on bool values (line {d}, token {d})\n",
                                 .{ token.line_number, token.token_number },
                             );
                             return error.NonNumericValue;
@@ -845,7 +844,7 @@ pub const Preprocessor = struct {
                         if (self.source_lines.len > 0) {
                             self.underlineAt(token.line_number, token.token_number, token.literal.len);
                         }
-                        Reporting.throwError("Error: Not enough operands for operator {s} (line {d}, token {d})\n", .{ token.literal, token.line_number, token.token_number });
+                        Reporting.throwError("Not enough operands for operator {s} (line {d}, token {d})\n", .{ token.literal, token.line_number, token.token_number });
                         return error.NotEnoughOperands;
                     }
 
@@ -877,7 +876,7 @@ pub const Preprocessor = struct {
                             if (self.source_lines.len > 0) {
                                 self.underlineAt(token.line_number, token.token_number, token.literal.len);
                             }
-                            Reporting.throwError("Error: Non-numeric value in expression, using 0 (line {d}, token {d})\n", .{ token.line_number, token.token_number });
+                            Reporting.throwError("Non-numeric value in expression (line {d}, token {d})\n", .{ token.line_number, token.token_number });
                             return error.NonNumericValue;
                         },
                     }
@@ -899,7 +898,7 @@ pub const Preprocessor = struct {
                             if (self.source_lines.len > 0) {
                                 self.underlineAt(token.line_number, token.token_number, token.literal.len);
                             }
-                            Reporting.throwError("Error: Non-numeric value in expression, using 0 (line {d}, token {d})\n", .{ token.line_number, token.token_number });
+                            Reporting.throwError("Non-numeric value in expression (line {d}, token {d})\n", .{ token.line_number, token.token_number });
                             return error.NonNumericValue;
                         },
                     }
@@ -916,7 +915,7 @@ pub const Preprocessor = struct {
                                     if (self.source_lines.len > 0) {
                                         self.underlineAt(token.line_number, token.token_number, token.literal.len);
                                     }
-                                    Reporting.throwError("Error: Division by zero (line {d}, token {d})\n", .{ token.line_number, token.token_number });
+                                    Reporting.throwError("Division by zero (line {d}, token {d})\n", .{ token.line_number, token.token_number });
                                     return error.DivisionByZero;
                                 }
                                 break :blk a_float / b_float;
@@ -926,7 +925,7 @@ pub const Preprocessor = struct {
                                     if (self.source_lines.len > 0) {
                                         self.underlineAt(token.line_number, token.token_number, token.literal.len);
                                     }
-                                    Reporting.throwError("Error: Modulo by zero (line {d}, token {d})\n", .{ token.line_number, token.token_number });
+                                    Reporting.throwError("Modulo by zero (line {d}, token {d})\n", .{ token.line_number, token.token_number });
                                     return error.ModuloByZero;
                                 }
                                 break :blk @mod(a_float, b_float);
@@ -945,7 +944,7 @@ pub const Preprocessor = struct {
                                     if (self.source_lines.len > 0) {
                                         self.underlineAt(token.line_number, token.token_number, token.literal.len);
                                     }
-                                    Reporting.throwError("Error: Division by zero (line {d}, token {d})\n", .{ token.line_number, token.token_number });
+                                    Reporting.throwError("Division by zero (line {d}, token {d})\n", .{ token.line_number, token.token_number });
                                     return error.DivisionByZero;
                                 }
                                 break :blk @divTrunc(a_int, b_int);
@@ -955,7 +954,7 @@ pub const Preprocessor = struct {
                                     if (self.source_lines.len > 0) {
                                         self.underlineAt(token.line_number, token.token_number, token.literal.len);
                                     }
-                                    Reporting.throwError("Error: Modulo by zero (line {d}, token {d})\n", .{ token.line_number, token.token_number });
+                                    Reporting.throwError("Modulo by zero (line {d}, token {d})\n", .{ token.line_number, token.token_number });
                                     return error.ModuloByZero;
                                 }
                                 break :blk @mod(a_int, b_int);
@@ -984,7 +983,7 @@ pub const Preprocessor = struct {
                 const t = tokens[0];
                 self.underlineAt(t.line_number, t.token_number, t.literal.len);
             }
-            Reporting.throwError("Error: Empty expression result (line {d}, token {d})\n", .{ tokens[0].line_number, tokens[0].token_number });
+            Reporting.throwError("Empty expression result (line {d}, token {d})\n", .{ tokens[0].line_number, tokens[0].token_number });
             return Value{ .int = 0 };
         }
     }
@@ -1108,7 +1107,7 @@ pub const Preprocessor = struct {
                                 self.underlineAt(current_token.line_number, current_token.token_number, 1);
                             }
                             Reporting.throwError(
-                                "Error: Variable '{s}' not found (line {d}, token {d})\n",
+                                "Variable '{s}' not found (line {d}, token {d})\n",
                                 .{ path_str, current_token.line_number, current_token.token_number },
                             );
                             return error.VariableNotFoundInScope;
@@ -1294,7 +1293,7 @@ fn coerceValueToType(self: *Preprocessor, declared_type: ValueType, value_item: 
                             self.underlineAt(value_item.line_number, value_item.token_number, @max(@as(usize, 1), value_item.value.string.len));
                         }
                         Reporting.throwError(
-                            "Error: Invalid time literal (expected epoch-millis integer or ISO-8601 string) (line {d}, token {d})\n",
+                            "Invalid time literal (expected epoch-millis integer or ISO-8601 string) (line {d}, token {d})\n",
                             .{ value_item.line_number, value_item.token_number },
                         );
                         return error.InvalidTime;
