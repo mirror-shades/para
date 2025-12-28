@@ -1,3 +1,5 @@
-var x: bool = false
-x =  !x
-x?
+var x = 5
+var y = x
+y = y + 1
+x? 
+y?

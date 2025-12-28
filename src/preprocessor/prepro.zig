@@ -116,7 +116,7 @@ pub const Preprocessor = struct {
         var var_it = scope.variables.iterator();
         while (var_it.next()) |entry| {
             const variable = entry.value_ptr.*;
-            if (variable.type == .nothing) continue;
+            if (variable.type == .nothing or variable.temp) continue;
 
             const ir_value = valueToIrValue(allocator, variable) catch continue;
             obj_ptr.fields.append(.{
