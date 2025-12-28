@@ -5,58 +5,46 @@ const process = std.process;
 const fs = std.fs;
 const printf = std.debug.print;
 
-const TEST_TOTAL = 16;
+// Pull in backend unit tests (e.g. string escaping helpers).
+const _backend_escape_tests = @import("backend_escape");
 
-var para_exe_override: ?[]const u8 = null;
+const TEST_TOTAL = 16;
 
 fn print(comptime format: []const u8) void {
     printf(format, .{});
 }
 
+fn requireReadableFileAbsolute(path: []const u8) !void {
+    const file = fs.openFileAbsolute(path, .{}) catch return error.FileNotFound;
+    file.close();
+}
+
 fn getParaExePath(allocator: std.mem.Allocator, project_root: []const u8) ![]u8 {
     const exe_name = if (builtin.os.tag == .windows) "para.exe" else "para";
+
+    if (process.getEnvVarOwned(allocator, "PARA_BIN")) |env_path| {
+        if (fs.path.isAbsolute(env_path)) {
+            errdefer allocator.free(env_path);
+            try requireReadableFileAbsolute(env_path);
+            return env_path;
+        }
+
+        defer allocator.free(env_path);
+        const abs = try fs.path.join(allocator, &[_][]const u8{ project_root, env_path });
+        errdefer allocator.free(abs);
+        try requireReadableFileAbsolute(abs);
+        return abs;
+    } else |err| switch (err) {
+        error.EnvironmentVariableNotFound => {},
+        else => return err,
+    }
 
     const exe_rel = try fs.path.join(allocator, &[_][]const u8{ "zig-out", "bin", exe_name });
     defer allocator.free(exe_rel);
     const exe_abs = try fs.path.join(allocator, &[_][]const u8{ project_root, exe_rel });
-    if (fs.openFileAbsolute(exe_abs, .{})) |file| {
-        file.close();
-        return exe_abs;
-    } else |_| {
-        allocator.free(exe_abs);
-    }
-
-    const o_dir_rel = try fs.path.join(allocator, &[_][]const u8{ ".zig-cache", "o" });
-    defer allocator.free(o_dir_rel);
-    const o_dir_abs = try fs.path.join(allocator, &[_][]const u8{ project_root, o_dir_rel });
-    defer allocator.free(o_dir_abs);
-
-    var o_dir = fs.openDirAbsolute(o_dir_abs, .{ .iterate = true }) catch return error.FileNotFound;
-    defer o_dir.close();
-
-    var best_path: ?[]u8 = null;
-    var best_mtime: i128 = -1;
-
-    var it = o_dir.iterate();
-    while (try it.next()) |entry| {
-        if (entry.kind != .directory) continue;
-
-        var sub = o_dir.openDir(entry.name, .{ .iterate = true }) catch continue;
-        defer sub.close();
-
-        const cand = sub.openFile(exe_name, .{}) catch continue;
-        defer cand.close();
-
-        const stat = try cand.stat();
-        const mtime: i128 = @intCast(stat.mtime);
-        if (mtime > best_mtime) {
-            best_mtime = mtime;
-            if (best_path) |p| allocator.free(p);
-            best_path = try fs.path.join(allocator, &[_][]const u8{ o_dir_abs, entry.name, exe_name });
-        }
-    }
-
-    return best_path orelse error.FileNotFound;
+    errdefer allocator.free(exe_abs);
+    try requireReadableFileAbsolute(exe_abs);
+    return exe_abs;
 }
 
 fn dirHasFile(dir: fs.Dir, name: []const u8) bool {
@@ -113,6 +101,9 @@ fn runParaCommand(allocator: std.mem.Allocator, path: []const u8) ![]const u8 {
     const project_root = try findProjectRoot(allocator);
     defer allocator.free(project_root);
 
+    const exe_path = try getParaExePath(allocator, project_root);
+    defer allocator.free(exe_path);
+
     var root_dir = try fs.openDirAbsolute(project_root, .{});
     defer root_dir.close();
     const file = root_dir.openFile(path, .{}) catch |err| {
@@ -125,11 +116,6 @@ fn runParaCommand(allocator: std.mem.Allocator, path: []const u8) ![]const u8 {
 
     const file_contents = try file.readToEndAlloc(child_allocator, std.math.maxInt(usize));
     defer child_allocator.free(file_contents);
-
-    const exe_path_owned = getParaExePath(allocator, project_root) catch null;
-    defer if (exe_path_owned) |p| allocator.free(p);
-
-    const exe_path = exe_path_owned orelse return error.FileNotFound;
 
     const input_abs = try fs.path.join(allocator, &[_][]const u8{ project_root, path });
     defer allocator.free(input_abs);
@@ -159,15 +145,13 @@ fn runParaJsonCommand(allocator: std.mem.Allocator, path: []const u8) ![]const u
     const project_root = try findProjectRoot(allocator);
     defer allocator.free(project_root);
 
+    const exe_path = try getParaExePath(allocator, project_root);
+    defer allocator.free(exe_path);
+
     var root_dir = try fs.openDirAbsolute(project_root, .{});
     defer root_dir.close();
     const file = root_dir.openFile(path, .{}) catch return error.FileNotFound;
     defer file.close();
-
-    const exe_path_owned = getParaExePath(allocator, project_root) catch null;
-    defer if (exe_path_owned) |p| allocator.free(p);
-
-    const exe_path = exe_path_owned orelse return error.FileNotFound;
 
     const input_abs = try fs.path.join(allocator, &[_][]const u8{ project_root, path });
     defer allocator.free(input_abs);
@@ -197,15 +181,13 @@ fn runParaZonCommand(allocator: std.mem.Allocator, path: []const u8) ![]const u8
     const project_root = try findProjectRoot(allocator);
     defer allocator.free(project_root);
 
+    const exe_path = try getParaExePath(allocator, project_root);
+    defer allocator.free(exe_path);
+
     var root_dir = try fs.openDirAbsolute(project_root, .{});
     defer root_dir.close();
     const file = root_dir.openFile(path, .{}) catch return error.FileNotFound;
     defer file.close();
-
-    const exe_path_owned = getParaExePath(allocator, project_root) catch null;
-    defer if (exe_path_owned) |p| allocator.free(p);
-
-    const exe_path = exe_path_owned orelse return error.FileNotFound;
 
     const input_abs = try fs.path.join(allocator, &[_][]const u8{ project_root, path });
     defer allocator.free(input_abs);
@@ -235,15 +217,13 @@ fn runParaYamlCommand(allocator: std.mem.Allocator, path: []const u8) ![]const u
     const project_root = try findProjectRoot(allocator);
     defer allocator.free(project_root);
 
+    const exe_path = try getParaExePath(allocator, project_root);
+    defer allocator.free(exe_path);
+
     var root_dir = try fs.openDirAbsolute(project_root, .{});
     defer root_dir.close();
     const file = root_dir.openFile(path, .{}) catch return error.FileNotFound;
     defer file.close();
-
-    const exe_path_owned = getParaExePath(allocator, project_root) catch null;
-    defer if (exe_path_owned) |p| allocator.free(p);
-
-    const exe_path = exe_path_owned orelse return error.FileNotFound;
 
     const input_abs = try fs.path.join(allocator, &[_][]const u8{ project_root, path });
     defer allocator.free(input_abs);
@@ -273,15 +253,13 @@ fn runParaTomlCommand(allocator: std.mem.Allocator, path: []const u8) ![]const u
     const project_root = try findProjectRoot(allocator);
     defer allocator.free(project_root);
 
+    const exe_path = try getParaExePath(allocator, project_root);
+    defer allocator.free(exe_path);
+
     var root_dir = try fs.openDirAbsolute(project_root, .{});
     defer root_dir.close();
     const file = root_dir.openFile(path, .{}) catch return error.FileNotFound;
     defer file.close();
-
-    const exe_path_owned = getParaExePath(allocator, project_root) catch null;
-    defer if (exe_path_owned) |p| allocator.free(p);
-
-    const exe_path = exe_path_owned orelse return error.FileNotFound;
 
     const input_abs = try fs.path.join(allocator, &[_][]const u8{ project_root, path });
     defer allocator.free(input_abs);
@@ -311,15 +289,13 @@ fn runParaRonCommand(allocator: std.mem.Allocator, path: []const u8) ![]const u8
     const project_root = try findProjectRoot(allocator);
     defer allocator.free(project_root);
 
+    const exe_path = try getParaExePath(allocator, project_root);
+    defer allocator.free(exe_path);
+
     var root_dir = try fs.openDirAbsolute(project_root, .{});
     defer root_dir.close();
     const file = root_dir.openFile(path, .{}) catch return error.FileNotFound;
     defer file.close();
-
-    const exe_path_owned = getParaExePath(allocator, project_root) catch null;
-    defer if (exe_path_owned) |p| allocator.free(p);
-
-    const exe_path = exe_path_owned orelse return error.FileNotFound;
 
     const input_abs = try fs.path.join(allocator, &[_][]const u8{ project_root, path });
     defer allocator.free(input_abs);

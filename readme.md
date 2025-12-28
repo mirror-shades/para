@@ -1,6 +1,7 @@
-## built with zig 0.15
+## built with zig 0.15.2
 
 - use 'zig build' to build from source
+- use `zig build test` to run tests (it sets `PARA_BIN` for the test runner)
 
 # Para Language Documentation
 

@@ -1,5 +1,6 @@
 const std = @import("std");
 const ir = @import("../ir.zig");
+const escape = @import("./escape.zig");
 
 pub fn writeProgramYaml(
     writer: anytype,
@@ -62,10 +63,7 @@ fn writeScalar(
 }
 
 fn writeString(writer: anytype, bytes: []const u8) anyerror!void {
-    try writer.writeByte('"');
-    // TODO: escape quotes and control characters if needed
-    try writer.writeAll(bytes);
-    try writer.writeByte('"');
+    try escape.writeYamlDoubleQuotedString(writer, bytes);
 }
 
 fn writeIndent(writer: anytype, count: usize) anyerror!void {
