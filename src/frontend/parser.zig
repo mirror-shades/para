@@ -46,8 +46,8 @@ pub const Parser = struct {
     pub fn init(allocator: std.mem.Allocator, tokens: []Token) Parser {
         return Parser{
             .tokens = tokens,
-            .groups = std.ArrayList(Group).init(allocator),
-            .parsed_tokens = std.ArrayList(ParsedToken).init(allocator),
+            .groups = .empty,
+            .parsed_tokens = .empty,
             .allocator = allocator,
             .is_mutable = false,
             .is_temporary = false,
@@ -61,8 +61,8 @@ pub const Parser = struct {
             token.deinit(self.allocator);
         }
 
-        self.groups.deinit();
-        self.parsed_tokens.deinit();
+        self.groups.deinit(self.allocator);
+        self.parsed_tokens.deinit(self.allocator);
         self.tokens = undefined;
     }
 
@@ -127,7 +127,7 @@ pub const Parser = struct {
                     // prefix the line with the current group path so downstream processing can infer scope correctly.
                     if (!line_prefixed_with_groups and self.groups.items.len > 0) {
                         for (self.groups.items) |g| {
-                            try self.parsed_tokens.append(ParsedToken{
+                            try self.parsed_tokens.append(self.allocator, ParsedToken{
                                 .token_type = .TKN_GROUP,
                                 .literal = g.name,
                                 .expression = null,
@@ -154,7 +154,7 @@ pub const Parser = struct {
                             self.parsed_tokens.items[self.parsed_tokens.items.len - 1].token_type != .TKN_GROUP or
                             !std.mem.eql(u8, self.parsed_tokens.items[self.parsed_tokens.items.len - 1].literal, current_token.literal))
                         {
-                            try self.parsed_tokens.append(ParsedToken{
+                            try self.parsed_tokens.append(self.allocator, ParsedToken{
                                 .token_type = .TKN_GROUP,
                                 .literal = current_token.literal,
                                 .expression = null,
@@ -174,7 +174,7 @@ pub const Parser = struct {
                         self.tokens[current_index].token_type == .TKN_NEWLINE or
                         self.tokens[current_index].token_type == .TKN_INSPECT)
                     {
-                        try self.parsed_tokens.append(ParsedToken{
+                        try self.parsed_tokens.append(self.allocator, ParsedToken{
                             .token_type = .TKN_IDENTIFIER,
                             .literal = current_token.literal,
                             .expression = null,
@@ -191,7 +191,7 @@ pub const Parser = struct {
                         }
                         if (self.groups.items.len > 0) {
                             if (self.groups.items[self.groups.items.len - 1].type) |t| {
-                                try self.parsed_tokens.append(ParsedToken{
+                                try self.parsed_tokens.append(self.allocator, ParsedToken{
                                     .token_type = .TKN_TYPE,
                                     .literal = t,
                                     .expression = null,
@@ -212,7 +212,7 @@ pub const Parser = struct {
                     // Prefix line with current group path if needed
                     if (!line_prefixed_with_groups and self.groups.items.len > 0) {
                         for (self.groups.items) |g| {
-                            try self.parsed_tokens.append(ParsedToken{
+                            try self.parsed_tokens.append(self.allocator, ParsedToken{
                                 .token_type = .TKN_GROUP,
                                 .literal = g.name,
                                 .expression = null,
@@ -234,7 +234,7 @@ pub const Parser = struct {
                         } else if (self.tokens[current_index + 1].token_type == .TKN_TYPE_ASSIGN) {
                             continue;
                         }
-                        try self.parsed_tokens.append(ParsedToken{
+                        try self.parsed_tokens.append(self.allocator, ParsedToken{
                             .token_type = .TKN_GROUP,
                             .literal = current_token.literal,
                             .expression = null,
@@ -248,7 +248,7 @@ pub const Parser = struct {
                         });
                         continue;
                     }
-                    try self.parsed_tokens.append(ParsedToken{
+                    try self.parsed_tokens.append(self.allocator, ParsedToken{
                         .token_type = .TKN_LOOKUP,
                         .literal = current_token.literal,
                         .expression = null,
@@ -263,7 +263,7 @@ pub const Parser = struct {
                     continue;
                 },
                 .TKN_RBRACKET => {
-                    try self.parsed_tokens.append(ParsedToken{
+                    try self.parsed_tokens.append(self.allocator, ParsedToken{
                         .token_type = .TKN_RBRACKET,
                         .literal = current_token.literal,
                         .expression = null,
@@ -278,7 +278,7 @@ pub const Parser = struct {
                     continue;
                 },
                 .TKN_LBRACKET => {
-                    try self.parsed_tokens.append(ParsedToken{
+                    try self.parsed_tokens.append(self.allocator, ParsedToken{
                         .token_type = .TKN_LBRACKET,
                         .literal = current_token.literal,
                         .expression = null,
@@ -317,7 +317,7 @@ pub const Parser = struct {
 
                     if (name_index) |idx| {
                         const token_to_add = self.tokens[idx];
-                        try self.groups.append(Group{ .name = token_to_add.literal, .type = type_to_add });
+                        try self.groups.append(self.allocator, Group{ .name = token_to_add.literal, .type = type_to_add });
                     }
                     continue;
                 },
@@ -331,14 +331,14 @@ pub const Parser = struct {
                     }
                     has_equals = true;
 
-                    const assign_line: std.ArrayList(Token) = grabLine(self, current_token) catch |err| {
+                    var assign_line: std.ArrayList(Token) = grabLine(self, current_token) catch |err| {
                         printError("Error grabbing line: {s}\n", .{@errorName(err)});
                         return error.ErrorGrabbingLine;
                     };
-                    defer assign_line.deinit();
+                    defer assign_line.deinit(self.allocator);
                     const if_expression = ifExpression(assign_line.items);
                     if (if_expression) {
-                        try self.parsed_tokens.append(ParsedToken{
+                        try self.parsed_tokens.append(self.allocator, ParsedToken{
                             .token_type = .TKN_VALUE_ASSIGN,
                             .literal = current_token.literal,
                             .expression = null,
@@ -359,7 +359,7 @@ pub const Parser = struct {
 
                         // Only add expression tokens if there are actually tokens to process
                         if (expression_tokens.len > 0) {
-                            try self.parsed_tokens.append(ParsedToken{
+                            try self.parsed_tokens.append(self.allocator, ParsedToken{
                                 .token_type = .TKN_EXPRESSION,
                                 .literal = "Expression",
                                 .value_type = .nothing,
@@ -378,7 +378,7 @@ pub const Parser = struct {
                             return error.EmptyExpression;
                         }
                     } else {
-                        try self.parsed_tokens.append(ParsedToken{
+                        try self.parsed_tokens.append(self.allocator, ParsedToken{
                             .token_type = .TKN_VALUE_ASSIGN,
                             .literal = current_token.literal,
                             .expression = null,
@@ -435,7 +435,7 @@ pub const Parser = struct {
                     self.is_mutable = false;
                     self.is_temporary = false;
                     self.has_decl_prefix = false;
-                    try self.parsed_tokens.append(ParsedToken{
+                    try self.parsed_tokens.append(self.allocator, ParsedToken{
                         .token_type = .TKN_NEWLINE,
                         .literal = current_token.literal,
                         .expression = null,
@@ -453,7 +453,7 @@ pub const Parser = struct {
                     // Standalone type tokens (e.g. in variable declarations) are
                     // forwarded; group-level types are handled when entering the
                     // corresponding `{` block.
-                    try self.parsed_tokens.append(ParsedToken{
+                    try self.parsed_tokens.append(self.allocator, ParsedToken{
                         .token_type = .TKN_TYPE,
                         .literal = current_token.literal,
                         .expression = null,
@@ -470,7 +470,7 @@ pub const Parser = struct {
                 .TKN_VALUE => {
                     // Parse the value from the literal based on the token's value type
                     const parsed_value = parseValueFromLiteral(current_token.literal, current_token.value_type);
-                    try self.parsed_tokens.append(ParsedToken{
+                    try self.parsed_tokens.append(self.allocator, ParsedToken{
                         .token_type = .TKN_VALUE,
                         .literal = current_token.literal,
                         .expression = null,
@@ -485,7 +485,7 @@ pub const Parser = struct {
                     continue;
                 },
                 .TKN_INSPECT => {
-                    try self.parsed_tokens.append(ParsedToken{
+                    try self.parsed_tokens.append(self.allocator, ParsedToken{
                         .token_type = .TKN_INSPECT,
                         .literal = current_token.literal,
                         .expression = null,
@@ -503,7 +503,7 @@ pub const Parser = struct {
                     continue;
                 },
                 .TKN_PLUS => {
-                    try self.parsed_tokens.append(ParsedToken{
+                    try self.parsed_tokens.append(self.allocator, ParsedToken{
                         .token_type = .TKN_PLUS,
                         .literal = current_token.literal,
                         .expression = null,
@@ -518,7 +518,7 @@ pub const Parser = struct {
                     continue;
                 },
                 .TKN_MINUS => {
-                    try self.parsed_tokens.append(ParsedToken{
+                    try self.parsed_tokens.append(self.allocator, ParsedToken{
                         .token_type = .TKN_MINUS,
                         .literal = current_token.literal,
                         .expression = null,
@@ -533,7 +533,7 @@ pub const Parser = struct {
                     continue;
                 },
                 .TKN_STAR => {
-                    try self.parsed_tokens.append(ParsedToken{
+                    try self.parsed_tokens.append(self.allocator, ParsedToken{
                         .token_type = .TKN_STAR,
                         .literal = current_token.literal,
                         .expression = null,
@@ -548,7 +548,7 @@ pub const Parser = struct {
                     continue;
                 },
                 .TKN_SLASH => {
-                    try self.parsed_tokens.append(ParsedToken{
+                    try self.parsed_tokens.append(self.allocator, ParsedToken{
                         .token_type = .TKN_SLASH,
                         .literal = current_token.literal,
                         .expression = null,
@@ -563,7 +563,7 @@ pub const Parser = struct {
                     continue;
                 },
                 .TKN_PERCENT => {
-                    try self.parsed_tokens.append(ParsedToken{
+                    try self.parsed_tokens.append(self.allocator, ParsedToken{
                         .token_type = .TKN_PERCENT,
                         .literal = current_token.literal,
                         .expression = null,
@@ -578,7 +578,7 @@ pub const Parser = struct {
                     continue;
                 },
                 .TKN_POWER => {
-                    try self.parsed_tokens.append(ParsedToken{
+                    try self.parsed_tokens.append(self.allocator, ParsedToken{
                         .token_type = .TKN_POWER,
                         .literal = current_token.literal,
                         .expression = null,
@@ -639,7 +639,7 @@ fn isExpressionToken(token: Token) bool {
 }
 
 fn grabLine(self: *Parser, current_token: Token) !std.ArrayList(Token) {
-    var line_array = std.ArrayList(Token).init(self.allocator);
+    var line_array: std.ArrayList(Token) = .empty;
     var found_assign: bool = false;
     var last_token_type: ?TokenKind = null;
 
@@ -665,14 +665,14 @@ fn grabLine(self: *Parser, current_token: Token) !std.ArrayList(Token) {
                             .token_number = token.token_number,
                             .value_type = .nothing,
                         };
-                        line_array.append(implicit_mul) catch |err| {
+                        line_array.append(self.allocator, implicit_mul) catch |err| {
                             printError("Error appending implicit multiplication: {s}\n", .{@errorName(err)});
                             return error.ErrorAppendingImplicitMultiplication;
                         };
                     }
                 }
 
-                line_array.append(token) catch |err| {
+                line_array.append(self.allocator, token) catch |err| {
                     printError("Error appending to line_array: {s}\n", .{@errorName(err)});
                     return error.ErrorAppendingToLineArray;
                 };

@@ -19,11 +19,12 @@ pub const Object = struct {
     fields: std.ArrayList(Binding),
 
     pub fn init(allocator: std.mem.Allocator) Object {
-        return .{ .fields = std.ArrayList(Binding).init(allocator) };
+        _ = allocator;
+        return .{ .fields = .empty };
     }
 
-    pub fn deinit(self: *Object) void {
-        self.fields.deinit();
+    pub fn deinit(self: *Object, allocator: std.mem.Allocator) void {
+        self.fields.deinit(allocator);
     }
 };
 
@@ -41,11 +42,11 @@ pub const Program = struct {
     globals: std.ArrayList(Binding),
 
     pub fn init(allocator: std.mem.Allocator) Program {
-        return .{ .globals = std.ArrayList(Binding).init(allocator) };
+        _ = allocator;
+        return .{ .globals = .empty };
     }
 
-    pub fn deinit(self: *Program) void {
-        self.globals.deinit();
+    pub fn deinit(self: *Program, allocator: std.mem.Allocator) void {
+        self.globals.deinit(allocator);
     }
 };
-

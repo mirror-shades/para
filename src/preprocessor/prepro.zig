@@ -76,7 +76,7 @@ pub const Preprocessor = struct {
             if (variable.type == .nothing or variable.temp) continue;
 
             const ir_value = valueToIrValue(self.allocator, variable) catch continue;
-            program.globals.append(.{
+            program.globals.append(self.allocator, .{
                 .name = entry.key_ptr.*,
                 .value = ir_value,
             }) catch unreachable;
@@ -89,7 +89,7 @@ pub const Preprocessor = struct {
             const scope_ptr = scope_entry.value_ptr.*;
 
             const obj_ptr = scopeToObject(self.allocator, scope_ptr) catch continue;
-            program.globals.append(.{
+            program.globals.append(self.allocator, .{
                 .name = scope_name,
                 .value = ir.Value{ .object = obj_ptr },
             }) catch unreachable;
@@ -119,7 +119,7 @@ pub const Preprocessor = struct {
             if (variable.type == .nothing or variable.temp) continue;
 
             const ir_value = valueToIrValue(allocator, variable) catch continue;
-            obj_ptr.fields.append(.{
+            obj_ptr.fields.append(allocator, .{
                 .name = entry.key_ptr.*,
                 .value = ir_value,
             }) catch unreachable;
@@ -132,7 +132,7 @@ pub const Preprocessor = struct {
             const child_scope = nested_entry.value_ptr.*;
 
             const child_obj = scopeToObject(allocator, child_scope) catch continue;
-            obj_ptr.fields.append(.{
+            obj_ptr.fields.append(allocator, .{
                 .name = child_name,
                 .value = ir.Value{ .object = child_obj },
             }) catch unreachable;
@@ -143,8 +143,8 @@ pub const Preprocessor = struct {
 
     // Build lookup path for forward traversal (looking ahead from current position)
     pub fn buildLookupPathForward(self: *Preprocessor, tokens: []ParsedToken, start_index: usize) ![][]const u8 {
-        var path = std.ArrayList([]const u8).init(self.allocator);
-        defer path.deinit();
+        var path: std.ArrayList([]const u8) = .empty;
+        defer path.deinit(self.allocator);
 
         var i = start_index;
 
@@ -153,7 +153,7 @@ pub const Preprocessor = struct {
             tokens[i].token_type == .TKN_GROUP or
             tokens[i].token_type == .TKN_LOOKUP))
         {
-            try path.append(tokens[i].literal);
+            try path.append(self.allocator, tokens[i].literal);
             i += 1;
         } else {
             return error.InvalidLookupPath;
@@ -171,7 +171,7 @@ pub const Preprocessor = struct {
                 tokens[i].token_type == .TKN_IDENTIFIER or
                 tokens[i].token_type == .TKN_LOOKUP)
             {
-                try path.append(tokens[i].literal);
+                try path.append(self.allocator, tokens[i].literal);
                 i += 1;
             } else {
                 break; // Stop at the first non-path token
@@ -189,8 +189,8 @@ pub const Preprocessor = struct {
 
     // Build an array of lookup parts for backward traversal (for inspections or variable lookups)
     pub fn buildLookupPathBackward(self: *Preprocessor, tokens: []ParsedToken, index: usize) ![][]const u8 {
-        var path = std.ArrayList([]const u8).init(self.allocator);
-        defer path.deinit();
+        var path: std.ArrayList([]const u8) = .empty;
+        defer path.deinit(self.allocator);
 
         // Improved approach to capture complete paths
         // Start at the token right before the inspect symbol
@@ -204,7 +204,7 @@ pub const Preprocessor = struct {
         if (tokens[@intCast(current_index)].token_type == .TKN_IDENTIFIER or
             tokens[@intCast(current_index)].token_type == .TKN_LOOKUP)
         {
-            try path.append(tokens[@intCast(current_index)].literal);
+            try path.append(self.allocator, tokens[@intCast(current_index)].literal);
             current_index -= 1;
         } else {
             // If not an identifier or lookup, just return an empty path
@@ -226,7 +226,7 @@ pub const Preprocessor = struct {
                 token.token_type == .TKN_IDENTIFIER or
                 token.token_type == .TKN_LOOKUP))
             {
-                try path.insert(0, token.literal);
+                try path.insert(self.allocator, 0, token.literal);
                 in_path = false;
                 current_index -= 1;
                 continue;
@@ -252,19 +252,19 @@ pub const Preprocessor = struct {
     }
 
     pub fn buildAssignmentArray(self: *Preprocessor, tokens: []ParsedToken, index: usize) ![]Variable {
-        var result = std.ArrayList(Variable).init(self.allocator);
-        defer result.deinit();
+        var result: std.ArrayList(Variable) = .empty;
+        defer result.deinit(self.allocator);
 
         // First, collect any groups (scopes) that come before the identifier
         var i: isize = @intCast(index - 1);
-        var groups = std.ArrayList(Variable).init(self.allocator);
-        defer groups.deinit();
+        var groups: std.ArrayList(Variable) = .empty;
+        defer groups.deinit(self.allocator);
 
         // Collect groups in reverse order (right to left)
         while (i >= 0) : (i -= 1) {
             if (tokens[@intCast(i)].token_type == .TKN_GROUP) {
                 const t = tokens[@intCast(i)];
-                try groups.append(Variable{
+                try groups.append(self.allocator, Variable{
                     .name = t.literal,
                     .value = Value{ .nothing = {} },
                     .type = .nothing,
@@ -285,7 +285,7 @@ pub const Preprocessor = struct {
         if (groups.items.len > 0) {
             var group_idx: usize = 0;
             while (group_idx < groups.items.len) : (group_idx += 1) {
-                try result.append(groups.items[groups.items.len - 1 - group_idx]);
+                try result.append(self.allocator, groups.items[groups.items.len - 1 - group_idx]);
             }
         }
 
@@ -296,7 +296,7 @@ pub const Preprocessor = struct {
 
             if (tokens[@intCast(id_pos)].token_type == .TKN_IDENTIFIER) {
                 const id_tok = tokens[@intCast(id_pos)];
-                try result.append(Variable{
+                try result.append(self.allocator, Variable{
                     .name = id_tok.literal,
                     .value = Value{ .nothing = {} },
                     .type = .nothing,
@@ -311,7 +311,7 @@ pub const Preprocessor = struct {
                 tokens[@intCast(id_pos - 1)].token_type == .TKN_IDENTIFIER)
             {
                 const id_tok = tokens[@intCast(id_pos - 1)];
-                try result.append(Variable{
+                try result.append(self.allocator, Variable{
                     .name = id_tok.literal,
                     .value = Value{ .nothing = {} },
                     .type = .nothing,
@@ -341,7 +341,7 @@ pub const Preprocessor = struct {
 
         if (index + 1 < tokens.len and tokens[index + 1].token_type == .TKN_EXPRESSION) {
             const assign_tok = tokens[index];
-            try result.append(Variable{
+            try result.append(self.allocator, Variable{
                 .name = "value", // Placeholder name
                 .value = Value{ .int = 12 }, // Default for expressions for now
                 .type = .int,
@@ -356,7 +356,7 @@ pub const Preprocessor = struct {
             // Get the mutability from the identifier (last item in result)
             const identifier = result.items[result.items.len - 1];
             const val_tok = tokens[index + 1];
-            try result.append(Variable{
+            try result.append(self.allocator, Variable{
                 .name = "value", // Placeholder
                 .value = val_tok.value,
                 .type = val_tok.value_type,
@@ -418,7 +418,7 @@ pub const Preprocessor = struct {
             }
 
             if (resolved_rhs_variable) |var_struct| {
-                try result.append(var_struct);
+                try result.append(self.allocator, var_struct);
                 value_found = true;
             } else {
                 Reporting.throwError("Internal error: RHS variable was not resolved\n", .{});
@@ -466,11 +466,11 @@ pub const Preprocessor = struct {
         const result = current_scope.variables.get(var_name);
         if (result == null) {
             // Build a path string for better error reporting
-            var path_str = std.ArrayList(u8).init(self.allocator);
-            defer path_str.deinit();
+            var path_str: std.ArrayList(u8) = .empty;
+            defer path_str.deinit(self.allocator);
             for (path[0 .. path.len - 1], 0..) |part, i| {
-                if (i > 0) try path_str.appendSlice(".");
-                try path_str.appendSlice(part);
+                if (i > 0) try path_str.appendSlice(self.allocator, ".");
+                try path_str.appendSlice(self.allocator, part);
             }
             return error.VariableNotFoundInScope;
         }
@@ -601,8 +601,8 @@ pub const Preprocessor = struct {
     }
 
     fn buildExpressionLookupPath(self: *Preprocessor, expr_tokens: []Token, lookup_token: Token) ![][]const u8 {
-        var path = std.ArrayList([]const u8).init(self.allocator);
-        defer path.deinit();
+        var path: std.ArrayList([]const u8) = .empty;
+        defer path.deinit(self.allocator);
 
         // Locate the lookup token in the original infix expression.
         var start_index_opt: ?usize = null;
@@ -619,12 +619,12 @@ pub const Preprocessor = struct {
 
         if (start_index_opt == null) {
             // Fallback: treat the lookup as a single-segment name.
-            try path.append(lookup_token.literal);
+            try path.append(self.allocator, lookup_token.literal);
         } else {
             const start_index = start_index_opt.?;
 
             // First segment in the path.
-            try path.append(expr_tokens[start_index].literal);
+            try path.append(self.allocator, expr_tokens[start_index].literal);
 
             // Walk forward to collect `.segment` pieces, e.g. person.job.salary.
             var j = start_index + 1;
@@ -632,7 +632,7 @@ pub const Preprocessor = struct {
                 expr_tokens[j].token_type == .TKN_ARROW and
                 (expr_tokens[j + 1].token_type == .TKN_LOOKUP or expr_tokens[j + 1].token_type == .TKN_IDENTIFIER))
             {
-                try path.append(expr_tokens[j + 1].literal);
+                try path.append(self.allocator, expr_tokens[j + 1].literal);
                 j += 2;
             }
         }
@@ -655,11 +655,11 @@ pub const Preprocessor = struct {
         }
 
         // Use the shunting yard algorithm to convert infix to postfix
-        var stack = std.ArrayList(Token).init(self.allocator);
-        defer stack.deinit();
+        var stack: std.ArrayList(Token) = .empty;
+        defer stack.deinit(self.allocator);
 
-        var output = std.ArrayList(Token).init(self.allocator);
-        defer output.deinit();
+        var output: std.ArrayList(Token) = .empty;
+        defer output.deinit(self.allocator);
 
         const getPrecedence = struct {
             fn get(token_type: TokenKind) u8 {
@@ -679,13 +679,13 @@ pub const Preprocessor = struct {
             const token = tokens[idx];
 
             if (token.token_type == .TKN_VALUE) {
-                output.append(token) catch unreachable;
+                output.append(self.allocator, token) catch unreachable;
             } else if (token.token_type == .TKN_LOOKUP) {
                 // Treat this as the start of a dotted path like person.job.salary.
                 // We only emit a single lookup token into the output and skip the
                 // subsequent `.segment` pieces here; the full path is reconstructed
                 // later using the original infix tokens.
-                output.append(token) catch unreachable;
+                output.append(self.allocator, token) catch unreachable;
 
                 var lookahead = idx + 1;
                 while (lookahead + 1 < tokens.len and
@@ -700,7 +700,7 @@ pub const Preprocessor = struct {
                 }
             } else if (token.token_type == .TKN_EXCLAIM) {
                 // Unary not, highest precedence; just push onto operator stack.
-                stack.append(token) catch unreachable;
+                stack.append(self.allocator, token) catch unreachable;
             } else if (token.token_type == .TKN_PLUS or token.token_type == .TKN_MINUS or
                 token.token_type == .TKN_STAR or token.token_type == .TKN_SLASH or
                 token.token_type == .TKN_PERCENT or token.token_type == .TKN_POWER)
@@ -710,18 +710,18 @@ pub const Preprocessor = struct {
                 {
                     if (stack.items.len > 0) {
                         const last_op = stack.items[stack.items.len - 1];
-                        output.append(last_op) catch unreachable;
+                        output.append(self.allocator, last_op) catch unreachable;
                         _ = stack.orderedRemove(stack.items.len - 1);
                     }
                 }
-                stack.append(token) catch unreachable;
+                stack.append(self.allocator, token) catch unreachable;
             } else if (token.token_type == .TKN_LPAREN) {
-                stack.append(token) catch unreachable;
+                stack.append(self.allocator, token) catch unreachable;
             } else if (token.token_type == .TKN_RPAREN) {
                 while (stack.items.len > 0 and stack.items[stack.items.len - 1].token_type != .TKN_LPAREN) {
                     if (stack.items.len > 0) {
                         const last_op = stack.items[stack.items.len - 1];
-                        output.append(last_op) catch unreachable;
+                        output.append(self.allocator, last_op) catch unreachable;
                         _ = stack.orderedRemove(stack.items.len - 1);
                     }
                 }
@@ -733,13 +733,13 @@ pub const Preprocessor = struct {
 
         while (stack.items.len > 0) {
             const last_op = stack.items[stack.items.len - 1];
-            output.append(last_op) catch unreachable;
+            output.append(self.allocator, last_op) catch unreachable;
             _ = stack.orderedRemove(stack.items.len - 1);
         }
 
         // Now evaluate the postfix expression
-        var result_stack = std.ArrayList(Value).init(self.allocator);
-        defer result_stack.deinit();
+        var result_stack: std.ArrayList(Value) = .empty;
+        defer result_stack.deinit(self.allocator);
 
         var i: usize = 0;
         while (i < output.items.len) : (i += 1) {
@@ -754,7 +754,7 @@ pub const Preprocessor = struct {
                         .bool => Value{ .bool = std.mem.eql(u8, token.literal, "true") },
                         .nothing => Value{ .nothing = {} },
                     };
-                    result_stack.append(value) catch unreachable;
+                    result_stack.append(self.allocator, value) catch unreachable;
                 },
                 .TKN_LOOKUP => {
                     // Resolve a variable or dotted path (person.job.salary) using
@@ -767,11 +767,11 @@ pub const Preprocessor = struct {
                             self.underlineAt(token.line_number, token.token_number, token.literal.len);
                         }
                         // Build a dotted path string for diagnostics.
-                        var buf = std.ArrayList(u8).init(self.allocator);
-                        defer buf.deinit();
+                        var buf: std.ArrayList(u8) = .empty;
+                        defer buf.deinit(self.allocator);
                         for (path, 0..) |segment, seg_idx| {
-                            if (seg_idx > 0) buf.appendSlice(".") catch unreachable;
-                            buf.appendSlice(segment) catch unreachable;
+                            if (seg_idx > 0) buf.appendSlice(self.allocator, ".") catch unreachable;
+                            buf.appendSlice(self.allocator, segment) catch unreachable;
                         }
                         Reporting.throwError(
                             "Error: Variable '{s}' not found in expression, using 0 (line {d}, token {d})\n",
@@ -781,16 +781,16 @@ pub const Preprocessor = struct {
                     };
 
                     if (maybe_var) |resolved| {
-                        result_stack.append(resolved.value) catch unreachable;
+                        result_stack.append(self.allocator, resolved.value) catch unreachable;
                     } else {
                         if (self.source_lines.len > 0) {
                             self.underlineAt(token.line_number, token.token_number, token.literal.len);
                         }
-                        var buf = std.ArrayList(u8).init(self.allocator);
-                        defer buf.deinit();
+                        var buf: std.ArrayList(u8) = .empty;
+                        defer buf.deinit(self.allocator);
                         for (path, 0..) |segment, seg_idx| {
-                            if (seg_idx > 0) buf.appendSlice(".") catch unreachable;
-                            buf.appendSlice(segment) catch unreachable;
+                            if (seg_idx > 0) buf.appendSlice(self.allocator, ".") catch unreachable;
+                            buf.appendSlice(self.allocator, segment) catch unreachable;
                         }
                         Reporting.throwError(
                             "Error: Variable '{s}' not found in expression, using 0 (line {d}, token {d})\n",
@@ -924,7 +924,7 @@ pub const Preprocessor = struct {
                             .TKN_POWER => std.math.pow(f64, a_float, b_float),
                             else => unreachable,
                         };
-                        try result_stack.append(Value{ .float = float_result });
+                        try result_stack.append(self.allocator, Value{ .float = float_result });
                     } else {
                         const int_result: i64 = switch (token.token_type) {
                             .TKN_PLUS => a_int + b_int,
@@ -960,7 +960,7 @@ pub const Preprocessor = struct {
                             },
                             else => unreachable,
                         };
-                        try result_stack.append(Value{ .int = int_result });
+                        try result_stack.append(self.allocator, Value{ .int = int_result });
                     }
                 },
                 else => {},
@@ -1070,14 +1070,14 @@ pub const Preprocessor = struct {
                         // Build a formatted path string for display
                         var path_str: []u8 = undefined;
                         if (path.len > 0) {
-                            var buffer = std.ArrayList(u8).init(self.allocator);
-                            defer buffer.deinit();
+                            var buffer: std.ArrayList(u8) = .empty;
+                            defer buffer.deinit(self.allocator);
 
                             for (path, 0..) |part, idx| {
                                 if (idx > 0) {
-                                    try buffer.appendSlice(".");
+                                    try buffer.appendSlice(self.allocator, ".");
                                 }
-                                try buffer.appendSlice(part);
+                                try buffer.appendSlice(self.allocator, part);
                             }
 
                             path_str = try self.allocator.dupe(u8, buffer.items);
@@ -1195,8 +1195,8 @@ pub const Preprocessor = struct {
     // Handle inspection tokens (?) more accurately -
     // we need to fix the path order for inspection tokens
     pub fn buildLookupPathForInspection(self: *Preprocessor, tokens: []ParsedToken, index: usize) ![][]const u8 {
-        var path = std.ArrayList([]const u8).init(self.allocator);
-        defer path.deinit();
+        var path: std.ArrayList([]const u8) = .empty;
+        defer path.deinit(self.allocator);
 
         // If the token is not an inspection token, return empty path
         if (index >= tokens.len or tokens[index].token_type != .TKN_INSPECT) {
@@ -1218,8 +1218,8 @@ pub const Preprocessor = struct {
         const start_line_pos = findLineStart(tokens, index);
 
         // First collect all identifiers and groups
-        var parts = std.ArrayList([]const u8).init(self.allocator);
-        defer parts.deinit();
+        var parts: std.ArrayList([]const u8) = .empty;
+        defer parts.deinit(self.allocator);
 
         while (current_pos >= start_line_pos) : (current_pos -= 1) {
             const token = tokens[@intCast(current_pos)];
@@ -1228,7 +1228,7 @@ pub const Preprocessor = struct {
                 token.token_type == .TKN_GROUP or
                 token.token_type == .TKN_LOOKUP)
             {
-                try parts.append(token.literal);
+                try parts.append(self.allocator, token.literal);
             } else if (token.token_type == .TKN_NEWLINE) {
                 break; // Found the beginning of the line
             }
@@ -1247,7 +1247,7 @@ pub const Preprocessor = struct {
             }
 
             for (parts.items) |part| {
-                try path.append(part);
+                try path.append(self.allocator, part);
             }
         }
 

@@ -2,7 +2,7 @@
     .name = .para,
     .version = "0.0.0",
     .fingerprint = 0x24d2942dd6c95ff8,
-    .minimum_zig_version = "0.14.0",
+    .minimum_zig_version = "0.15.2",
     .paths = .{
         "build.zig",
         "build.zig.zon",

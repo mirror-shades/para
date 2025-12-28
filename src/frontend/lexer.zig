@@ -23,8 +23,8 @@ pub const Lexer = struct {
             .line = 1,
             .column = 1,
             .token_count = 0,
-            .tokens = std.ArrayList(token.Token).init(allocator),
-            .lines = std.ArrayList([]const u8).init(allocator),
+            .tokens = .empty,
+            .lines = .empty,
             .allocator = allocator,
             .assignment_mode = false,
         };
@@ -33,8 +33,8 @@ pub const Lexer = struct {
     }
 
     pub fn deinit(self: *Lexer) void {
-        self.tokens.deinit();
-        self.lines.deinit();
+        self.tokens.deinit(self.allocator);
+        self.lines.deinit(self.allocator);
     }
 
     fn readLines(self: *Lexer) !void {
@@ -45,7 +45,7 @@ pub const Lexer = struct {
             if (c == '\n' or c == '\r') {
                 // Capture the line content up to (but excluding) the
                 // line-ending character(s).
-                try self.lines.append(self.input[start..i]);
+                try self.lines.append(self.allocator, self.input[start..i]);
 
                 // Treat CRLF as a single logical newline by consuming the
                 // trailing '\n' here, so the next line starts after it.
@@ -59,7 +59,7 @@ pub const Lexer = struct {
         // source ends with a newline) so that `self.line` (1-based) never
         // exceeds `self.lines.len` during error reporting.
         if (start <= self.input.len) {
-            try self.lines.append(self.input[start..self.input.len]);
+            try self.lines.append(self.allocator, self.input[start..self.input.len]);
         }
     }
 
@@ -131,7 +131,7 @@ pub const Lexer = struct {
         }
 
         const current_column = self.column;
-        try self.tokens.append(.{
+        try self.tokens.append(self.allocator, .{
             .literal = "\\n",
             .token_type = .TKN_NEWLINE,
             .value_type = .nothing,
@@ -171,7 +171,7 @@ pub const Lexer = struct {
             if (c == '?') {
                 const current_column = self.column;
                 self.advance();
-                try self.tokens.append(.{
+                try self.tokens.append(self.allocator, .{
                     .literal = "?",
                     .token_type = .TKN_INSPECT,
                     .value_type = .nothing,
@@ -190,7 +190,7 @@ pub const Lexer = struct {
                 } else if (self.peek() == '/') {
                     self.skipLine();
                 } else {
-                    try self.tokens.append(.{
+                    try self.tokens.append(self.allocator, .{
                         .literal = "/",
                         .token_type = .TKN_SLASH,
                         .value_type = .nothing,
@@ -228,7 +228,7 @@ pub const Lexer = struct {
                 const is_temp_keyword = std.mem.eql(u8, word, "temp");
 
                 if (is_type_word) {
-                    try self.tokens.append(.{
+                    try self.tokens.append(self.allocator, .{
                         .literal = word,
                         .token_type = .TKN_TYPE,
                         .value_type = .nothing,
@@ -236,7 +236,7 @@ pub const Lexer = struct {
                         .token_number = current_column,
                     });
                 } else if (is_value_word) {
-                    try self.tokens.append(.{
+                    try self.tokens.append(self.allocator, .{
                         .literal = word,
                         .token_type = .TKN_VALUE,
                         .value_type = .bool,
@@ -246,7 +246,7 @@ pub const Lexer = struct {
                 } else if (is_temp_keyword) {
                     // Ensure `temp` is tokenized as a dedicated TEMP token so
                     // the parser can mark following declarations as temporary.
-                    try self.tokens.append(.{
+                    try self.tokens.append(self.allocator, .{
                         .literal = word,
                         .token_type = .TKN_TEMP,
                         .value_type = .nothing,
@@ -255,7 +255,7 @@ pub const Lexer = struct {
                     });
                 } else {
                     if (self.assignment_mode) {
-                        try self.tokens.append(.{
+                        try self.tokens.append(self.allocator, .{
                             .literal = word,
                             .token_type = .TKN_LOOKUP,
                             .value_type = .nothing,
@@ -263,7 +263,7 @@ pub const Lexer = struct {
                             .token_number = current_column,
                         });
                     } else {
-                        try self.tokens.append(.{
+                        try self.tokens.append(self.allocator, .{
                             .literal = word,
                             .token_type = .TKN_IDENTIFIER,
                             .value_type = .nothing,
@@ -282,7 +282,7 @@ pub const Lexer = struct {
                 ':' => {
                     const current_column = self.column;
                     self.advance();
-                    try self.tokens.append(.{
+                    try self.tokens.append(self.allocator, .{
                         .literal = ":",
                         .token_type = .TKN_TYPE_ASSIGN,
                         .value_type = .nothing,
@@ -294,7 +294,7 @@ pub const Lexer = struct {
                 '=' => {
                     const current_column = self.column;
                     self.advance();
-                    try self.tokens.append(.{
+                    try self.tokens.append(self.allocator, .{
                         .literal = "=",
                         .token_type = .TKN_VALUE_ASSIGN,
                         .value_type = .nothing,
@@ -306,7 +306,7 @@ pub const Lexer = struct {
                 },
                 '-' => {
                     const current_column = self.column;
-                    try self.tokens.append(.{
+                    try self.tokens.append(self.allocator, .{
                         .literal = "-",
                         .token_type = .TKN_MINUS,
                         .value_type = .nothing,
@@ -322,7 +322,7 @@ pub const Lexer = struct {
                     // inside readNumber(), so this branch only runs when the dot
                     // stands alone as a token.
                     const current_column = self.column;
-                    try self.tokens.append(.{
+                    try self.tokens.append(self.allocator, .{
                         .literal = ".",
                         .token_type = .TKN_ARROW,
                         .value_type = .nothing,
@@ -334,7 +334,7 @@ pub const Lexer = struct {
                 },
                 '+' => {
                     const current_column = self.column;
-                    try self.tokens.append(.{
+                    try self.tokens.append(self.allocator, .{
                         .literal = "+",
                         .token_type = .TKN_PLUS,
                         .value_type = .nothing,
@@ -346,7 +346,7 @@ pub const Lexer = struct {
                 },
                 '^' => {
                     const current_column = self.column;
-                    try self.tokens.append(.{
+                    try self.tokens.append(self.allocator, .{
                         .literal = "^",
                         .token_type = .TKN_POWER,
                         .value_type = .nothing,
@@ -358,7 +358,7 @@ pub const Lexer = struct {
                 },
                 '%' => {
                     const current_column = self.column;
-                    try self.tokens.append(.{
+                    try self.tokens.append(self.allocator, .{
                         .literal = "%",
                         .token_type = .TKN_PERCENT,
                         .value_type = .nothing,
@@ -370,7 +370,7 @@ pub const Lexer = struct {
                 },
                 '*' => {
                     const current_column = self.column;
-                    try self.tokens.append(.{
+                    try self.tokens.append(self.allocator, .{
                         .literal = "*",
                         .token_type = .TKN_STAR,
                         .value_type = .nothing,
@@ -382,7 +382,7 @@ pub const Lexer = struct {
                 },
                 '(' => {
                     const current_column = self.column;
-                    try self.tokens.append(.{
+                    try self.tokens.append(self.allocator, .{
                         .literal = "(",
                         .token_type = .TKN_LPAREN,
                         .value_type = .nothing,
@@ -394,7 +394,7 @@ pub const Lexer = struct {
                 },
                 ')' => {
                     const current_column = self.column;
-                    try self.tokens.append(.{
+                    try self.tokens.append(self.allocator, .{
                         .literal = ")",
                         .token_type = .TKN_RPAREN,
                         .value_type = .nothing,
@@ -406,7 +406,7 @@ pub const Lexer = struct {
                 },
                 '{' => {
                     const current_column = self.column;
-                    try self.tokens.append(.{
+                    try self.tokens.append(self.allocator, .{
                         .literal = "{",
                         .token_type = .TKN_LBRACE,
                         .value_type = .nothing,
@@ -418,7 +418,7 @@ pub const Lexer = struct {
                 },
                 '}' => {
                     const current_column = self.column;
-                    try self.tokens.append(.{
+                    try self.tokens.append(self.allocator, .{
                         .literal = "}",
                         .token_type = .TKN_RBRACE,
                         .value_type = .nothing,
@@ -430,7 +430,7 @@ pub const Lexer = struct {
                 },
                 '[' => {
                     const current_column = self.column;
-                    try self.tokens.append(.{
+                    try self.tokens.append(self.allocator, .{
                         .literal = "[",
                         .token_type = .TKN_LBRACKET,
                         .value_type = .nothing,
@@ -442,7 +442,7 @@ pub const Lexer = struct {
                 },
                 ']' => {
                     const current_column = self.column;
-                    try self.tokens.append(.{
+                    try self.tokens.append(self.allocator, .{
                         .literal = "]",
                         .token_type = .TKN_RBRACKET,
                         .value_type = .nothing,
@@ -454,7 +454,7 @@ pub const Lexer = struct {
                 },
                 ',' => {
                     const current_column = self.column;
-                    try self.tokens.append(.{
+                    try self.tokens.append(self.allocator, .{
                         .literal = ",",
                         .token_type = .TKN_COMMA,
                         .value_type = .nothing,
@@ -466,7 +466,7 @@ pub const Lexer = struct {
                 },
                 '!' => {
                     const current_column = self.column;
-                    try self.tokens.append(.{
+                    try self.tokens.append(self.allocator, .{
                         .literal = "!",
                         .token_type = .TKN_EXCLAIM,
                         .value_type = .nothing,
@@ -495,7 +495,7 @@ pub const Lexer = struct {
         }
 
         // Add final EOF token
-        try self.tokens.append(.{
+        try self.tokens.append(self.allocator, .{
             .literal = "EOF",
             .token_type = .TKN_EOF,
             .value_type = .nothing,
@@ -518,7 +518,7 @@ pub const Lexer = struct {
 
     fn makeWordToken(self: *Lexer, word: []const u8, column: usize) !void {
         if (std.mem.eql(u8, word, "temp")) {
-            try self.tokens.append(.{
+            try self.tokens.append(self.allocator, .{
                 .literal = word,
                 .token_type = .TKN_TEMP,
                 .value_type = .nothing,
@@ -526,7 +526,7 @@ pub const Lexer = struct {
                 .token_number = column,
             });
         } else if (std.mem.eql(u8, word, "var")) {
-            try self.tokens.append(.{
+            try self.tokens.append(self.allocator, .{
                 .literal = word,
                 .token_type = .TKN_VAR,
                 .value_type = .nothing,
@@ -534,7 +534,7 @@ pub const Lexer = struct {
                 .token_number = column,
             });
         } else if (std.mem.eql(u8, word, "const")) {
-            try self.tokens.append(.{
+            try self.tokens.append(self.allocator, .{
                 .literal = word,
                 .token_type = .TKN_CONST,
                 .value_type = .nothing,
@@ -542,7 +542,7 @@ pub const Lexer = struct {
                 .token_number = column,
             });
         } else if (std.meta.stringToEnum(token.ValueType, word)) |value_type| {
-            try self.tokens.append(.{
+            try self.tokens.append(self.allocator, .{
                 .literal = word,
                 .token_type = .TKN_VALUE,
                 .value_type = value_type,
@@ -551,7 +551,7 @@ pub const Lexer = struct {
             });
         } else {
             if (self.assignment_mode) {
-                try self.tokens.append(.{
+                try self.tokens.append(self.allocator, .{
                     .literal = word,
                     .token_type = .TKN_LOOKUP,
                     .value_type = .nothing,
@@ -559,7 +559,7 @@ pub const Lexer = struct {
                     .token_number = column,
                 });
             } else {
-                try self.tokens.append(.{
+                try self.tokens.append(self.allocator, .{
                     .literal = word,
                     .token_type = .TKN_IDENTIFIER,
                     .value_type = .nothing,
@@ -601,7 +601,7 @@ pub const Lexer = struct {
             return error.UnterminatedString;
         }
 
-        try self.tokens.append(.{
+        try self.tokens.append(self.allocator, .{
             .literal = self.input[start..self.pos],
             .token_type = .TKN_VALUE,
             .value_type = .string,
@@ -647,7 +647,7 @@ pub const Lexer = struct {
             return error.InvalidNumberFormat;
         }
 
-        try self.tokens.append(.{
+        try self.tokens.append(self.allocator, .{
             .literal = self.input[start..self.pos],
             .token_type = .TKN_VALUE,
             .value_type = if (has_dot) .float else .int,

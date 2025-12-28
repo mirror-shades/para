@@ -6,7 +6,7 @@ const fs = std.fs;
 const printf = std.debug.print;
 
 // update this when adding tests
-const TEST_TOTAL = 6;
+const TEST_TOTAL = 14;
 
 fn print(comptime format: []const u8) void {
     printf(format, .{});
@@ -97,20 +97,21 @@ fn runParaCommand(allocator: std.mem.Allocator, path: []const u8) ![]const u8 {
     const input_abs = try fs.path.join(allocator, &[_][]const u8{ project_root, path });
     defer allocator.free(input_abs);
 
-    var child = process.Child.init(&[_][]const u8{ exe_path, input_abs }, child_allocator);
-    child.cwd = project_root;
-    child.stdout_behavior = .Pipe;
-    child.stderr_behavior = .Pipe;
+    const result = try process.Child.run(.{
+        .allocator = child_allocator,
+        .argv = &[_][]const u8{ exe_path, input_abs },
+        .cwd = project_root,
+        .max_output_bytes = std.math.maxInt(usize),
+    });
+    defer child_allocator.free(result.stdout);
+    defer child_allocator.free(result.stderr);
 
-    try child.spawn();
-    const stdout = try child.stdout.?.reader().readAllAlloc(child_allocator, std.math.maxInt(usize));
-    const term = try child.wait();
-
-    if (term.Exited != 0) {
-        return error.CommandFailed;
+    switch (result.term) {
+        .Exited => |code| if (code != 0) return error.CommandFailed,
+        else => return error.CommandFailed,
     }
 
-    return try allocator.dupe(u8, stdout);
+    return try allocator.dupe(u8, result.stdout);
 }
 
 fn runParaJsonCommand(allocator: std.mem.Allocator, path: []const u8) ![]const u8 {
@@ -135,20 +136,177 @@ fn runParaJsonCommand(allocator: std.mem.Allocator, path: []const u8) ![]const u
     const input_abs = try fs.path.join(allocator, &[_][]const u8{ project_root, path });
     defer allocator.free(input_abs);
 
-    var child = process.Child.init(&[_][]const u8{ exe_path, "--json", input_abs }, child_allocator);
-    child.cwd = project_root;
-    child.stdout_behavior = .Pipe;
-    child.stderr_behavior = .Pipe;
+    const result = try process.Child.run(.{
+        .allocator = child_allocator,
+        .argv = &[_][]const u8{ exe_path, "--json", input_abs },
+        .cwd = project_root,
+        .max_output_bytes = std.math.maxInt(usize),
+    });
+    defer child_allocator.free(result.stdout);
+    defer child_allocator.free(result.stderr);
 
-    try child.spawn();
-    const stdout = try child.stdout.?.reader().readAllAlloc(child_allocator, std.math.maxInt(usize));
-    const term = try child.wait();
-
-    if (term.Exited != 0) {
-        return error.CommandFailed;
+    switch (result.term) {
+        .Exited => |code| if (code != 0) return error.CommandFailed,
+        else => return error.CommandFailed,
     }
 
-    return try allocator.dupe(u8, stdout);
+    return try allocator.dupe(u8, result.stdout);
+}
+
+fn runParaZonCommand(allocator: std.mem.Allocator, path: []const u8) ![]const u8 {
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const child_allocator = arena.allocator();
+
+    const project_root = try findProjectRoot(allocator);
+    defer allocator.free(project_root);
+
+    var root_dir = try fs.openDirAbsolute(project_root, .{});
+    defer root_dir.close();
+    const file = root_dir.openFile(path, .{}) catch return error.FileNotFound;
+    defer file.close();
+
+    const exe_name = if (builtin.os.tag == .windows) "para.exe" else "para";
+    const exe_rel = try fs.path.join(allocator, &[_][]const u8{ "zig-out", "bin", exe_name });
+    defer allocator.free(exe_rel);
+    const exe_path = try fs.path.join(allocator, &[_][]const u8{ project_root, exe_rel });
+    defer allocator.free(exe_path);
+
+    const input_abs = try fs.path.join(allocator, &[_][]const u8{ project_root, path });
+    defer allocator.free(input_abs);
+
+    const result = try process.Child.run(.{
+        .allocator = child_allocator,
+        .argv = &[_][]const u8{ exe_path, "--zon", input_abs },
+        .cwd = project_root,
+        .max_output_bytes = std.math.maxInt(usize),
+    });
+    defer child_allocator.free(result.stdout);
+    defer child_allocator.free(result.stderr);
+
+    switch (result.term) {
+        .Exited => |code| if (code != 0) return error.CommandFailed,
+        else => return error.CommandFailed,
+    }
+
+    return try allocator.dupe(u8, result.stdout);
+}
+
+fn runParaYamlCommand(allocator: std.mem.Allocator, path: []const u8) ![]const u8 {
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const child_allocator = arena.allocator();
+
+    const project_root = try findProjectRoot(allocator);
+    defer allocator.free(project_root);
+
+    var root_dir = try fs.openDirAbsolute(project_root, .{});
+    defer root_dir.close();
+    const file = root_dir.openFile(path, .{}) catch return error.FileNotFound;
+    defer file.close();
+
+    const exe_name = if (builtin.os.tag == .windows) "para.exe" else "para";
+    const exe_rel = try fs.path.join(allocator, &[_][]const u8{ "zig-out", "bin", exe_name });
+    defer allocator.free(exe_rel);
+    const exe_path = try fs.path.join(allocator, &[_][]const u8{ project_root, exe_rel });
+    defer allocator.free(exe_path);
+
+    const input_abs = try fs.path.join(allocator, &[_][]const u8{ project_root, path });
+    defer allocator.free(input_abs);
+
+    const result = try process.Child.run(.{
+        .allocator = child_allocator,
+        .argv = &[_][]const u8{ exe_path, "--yaml", input_abs },
+        .cwd = project_root,
+        .max_output_bytes = std.math.maxInt(usize),
+    });
+    defer child_allocator.free(result.stdout);
+    defer child_allocator.free(result.stderr);
+
+    switch (result.term) {
+        .Exited => |code| if (code != 0) return error.CommandFailed,
+        else => return error.CommandFailed,
+    }
+
+    return try allocator.dupe(u8, result.stdout);
+}
+
+fn runParaTomlCommand(allocator: std.mem.Allocator, path: []const u8) ![]const u8 {
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const child_allocator = arena.allocator();
+
+    const project_root = try findProjectRoot(allocator);
+    defer allocator.free(project_root);
+
+    var root_dir = try fs.openDirAbsolute(project_root, .{});
+    defer root_dir.close();
+    const file = root_dir.openFile(path, .{}) catch return error.FileNotFound;
+    defer file.close();
+
+    const exe_name = if (builtin.os.tag == .windows) "para.exe" else "para";
+    const exe_rel = try fs.path.join(allocator, &[_][]const u8{ "zig-out", "bin", exe_name });
+    defer allocator.free(exe_rel);
+    const exe_path = try fs.path.join(allocator, &[_][]const u8{ project_root, exe_rel });
+    defer allocator.free(exe_path);
+
+    const input_abs = try fs.path.join(allocator, &[_][]const u8{ project_root, path });
+    defer allocator.free(input_abs);
+
+    const result = try process.Child.run(.{
+        .allocator = child_allocator,
+        .argv = &[_][]const u8{ exe_path, "--toml", input_abs },
+        .cwd = project_root,
+        .max_output_bytes = std.math.maxInt(usize),
+    });
+    defer child_allocator.free(result.stdout);
+    defer child_allocator.free(result.stderr);
+
+    switch (result.term) {
+        .Exited => |code| if (code != 0) return error.CommandFailed,
+        else => return error.CommandFailed,
+    }
+
+    return try allocator.dupe(u8, result.stdout);
+}
+
+fn runParaRonCommand(allocator: std.mem.Allocator, path: []const u8) ![]const u8 {
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const child_allocator = arena.allocator();
+
+    const project_root = try findProjectRoot(allocator);
+    defer allocator.free(project_root);
+
+    var root_dir = try fs.openDirAbsolute(project_root, .{});
+    defer root_dir.close();
+    const file = root_dir.openFile(path, .{}) catch return error.FileNotFound;
+    defer file.close();
+
+    const exe_name = if (builtin.os.tag == .windows) "para.exe" else "para";
+    const exe_rel = try fs.path.join(allocator, &[_][]const u8{ "zig-out", "bin", exe_name });
+    defer allocator.free(exe_rel);
+    const exe_path = try fs.path.join(allocator, &[_][]const u8{ project_root, exe_rel });
+    defer allocator.free(exe_path);
+
+    const input_abs = try fs.path.join(allocator, &[_][]const u8{ project_root, path });
+    defer allocator.free(input_abs);
+
+    const result = try process.Child.run(.{
+        .allocator = child_allocator,
+        .argv = &[_][]const u8{ exe_path, "--ron", input_abs },
+        .cwd = project_root,
+        .max_output_bytes = std.math.maxInt(usize),
+    });
+    defer child_allocator.free(result.stdout);
+    defer child_allocator.free(result.stderr);
+
+    switch (result.term) {
+        .Exited => |code| if (code != 0) return error.CommandFailed,
+        else => return error.CommandFailed,
+    }
+
+    return try allocator.dupe(u8, result.stdout);
 }
 
 const Output = struct {
@@ -158,7 +316,7 @@ const Output = struct {
 };
 
 fn parseOutput(output: []const u8, allocator: std.mem.Allocator) !std.ArrayList(Output) {
-    var outputs = std.ArrayList(Output).init(allocator);
+    var outputs: std.ArrayList(Output) = .empty;
     var toParse = output;
     while (toParse.len > 0) {
         // First get everything after the ]
@@ -170,7 +328,7 @@ fn parseOutput(output: []const u8, allocator: std.mem.Allocator) !std.ArrayList(
         const typ = std.mem.trim(u8, grabBetween(after_bracket, ":", "="), &std.ascii.whitespace);
         const value = std.mem.trim(u8, grabBetween(after_bracket, "=", "\n"), &std.ascii.whitespace);
 
-        outputs.append(Output{ .name = name, .type = typ, .value = value }) catch unreachable;
+        try outputs.append(allocator, Output{ .name = name, .type = typ, .value = value });
 
         // Find the next line by looking for the next [
         const next_line = std.mem.indexOf(u8, toParse, "\n[") orelse break;
@@ -186,6 +344,11 @@ fn grabBetween(output: []const u8, start: []const u8, end: []const u8) []const u
         return output[start_index + start.len ..];
     };
     return output[start_index + start.len .. start_index + start.len + end_index];
+}
+
+fn expectFloatStringApprox(expected: f64, actual: []const u8) !void {
+    const parsed = try std.fmt.parseFloat(f64, actual);
+    try testing.expectApproxEqAbs(expected, parsed, 1e-9);
 }
 
 // Test result tracking
@@ -206,7 +369,7 @@ const TestRunner = struct {
     fn init(allocator: std.mem.Allocator) TestRunner {
         return TestRunner{
             .allocator = allocator,
-            .results = std.ArrayList(TestResult).init(allocator),
+            .results = .empty,
             .start_time = std.time.milliTimestamp(),
         };
     }
@@ -217,7 +380,7 @@ const TestRunner = struct {
                 self.allocator.free(msg);
             }
         }
-        self.results.deinit();
+        self.results.deinit(self.allocator);
     }
 
     fn runTest(self: *TestRunner, name: []const u8, test_fn: fn (std.mem.Allocator) anyerror!void) void {
@@ -232,7 +395,7 @@ const TestRunner = struct {
         if (result) {
             printf("✅ PASSED ({d}ms)\n", .{duration});
             self.passed_tests += 1;
-            self.results.append(TestResult{
+            self.results.append(self.allocator, TestResult{
                 .name = name,
                 .passed = true,
                 .duration_ms = duration,
@@ -240,7 +403,7 @@ const TestRunner = struct {
         } else |err| {
             const error_msg = std.fmt.allocPrint(self.allocator, "{}", .{err}) catch "Unknown error";
             printf("❌ FAILED ({d}ms) - {s}\n", .{ duration, error_msg });
-            self.results.append(TestResult{
+            self.results.append(self.allocator, TestResult{
                 .name = name,
                 .passed = false,
                 .duration_ms = duration,
@@ -274,7 +437,8 @@ fn testBasicVariableAssignment(allocator: std.mem.Allocator) !void {
     const output = try runParaCommand(allocator, "./test/build-checks/variable_assign.para");
     defer allocator.free(output);
 
-    const outputs = try parseOutput(output, allocator);
+    var outputs = try parseOutput(output, allocator);
+    defer outputs.deinit(allocator);
 
     try testing.expectEqualStrings("int_assign", outputs.items[0].name);
     try testing.expectEqualStrings("int", outputs.items[0].type);
@@ -286,7 +450,7 @@ fn testBasicVariableAssignment(allocator: std.mem.Allocator) !void {
 
     try testing.expectEqualStrings("float_assign", outputs.items[2].name);
     try testing.expectEqualStrings("float", outputs.items[2].type);
-    try testing.expectEqualStrings("5.5e0", outputs.items[2].value);
+    try expectFloatStringApprox(5.5, outputs.items[2].value);
 
     try testing.expectEqualStrings("bool_assign", outputs.items[3].name);
     try testing.expectEqualStrings("bool", outputs.items[3].type);
@@ -301,7 +465,8 @@ fn testGroupAssignments(allocator: std.mem.Allocator) !void {
     const output = try runParaCommand(allocator, "./test/build-checks/groupings.para");
     defer allocator.free(output);
 
-    const outputs = try parseOutput(output, allocator);
+    var outputs = try parseOutput(output, allocator);
+    defer outputs.deinit(allocator);
 
     try testing.expectEqualStrings("person.age", outputs.items[0].name);
     try testing.expectEqualStrings("int", outputs.items[0].type);
@@ -320,7 +485,8 @@ fn testBigFile(allocator: std.mem.Allocator) !void {
     const output = try runParaCommand(allocator, "./test/build-checks/big_file.para");
     defer allocator.free(output);
 
-    const outputs = try parseOutput(output, allocator);
+    var outputs = try parseOutput(output, allocator);
+    defer outputs.deinit(allocator);
 
     try testing.expectEqualStrings("person.age", outputs.items[0].name);
     try testing.expectEqualStrings("int", outputs.items[0].type);
@@ -332,7 +498,7 @@ fn testBigFile(allocator: std.mem.Allocator) !void {
 
     try testing.expectEqualStrings("person.job.salary", outputs.items[2].name);
     try testing.expectEqualStrings("float", outputs.items[2].type);
-    try testing.expectEqualStrings("7e4", outputs.items[2].value);
+    try expectFloatStringApprox(70000.0, outputs.items[2].value);
 
     try testing.expectEqualStrings("person.name", outputs.items[3].name);
     try testing.expectEqualStrings("string", outputs.items[3].type);
@@ -344,7 +510,7 @@ fn testBigFile(allocator: std.mem.Allocator) !void {
 
     try testing.expectEqualStrings("y", outputs.items[5].name);
     try testing.expectEqualStrings("float", outputs.items[5].type);
-    try testing.expectEqualStrings("7e4", outputs.items[5].value);
+    try expectFloatStringApprox(70000.0, outputs.items[5].value);
 
     try testing.expectEqualStrings("value", outputs.items[6].name);
     try testing.expectEqualStrings("int", outputs.items[6].type);
@@ -355,7 +521,8 @@ fn testSugar(allocator: std.mem.Allocator) !void {
     const output = try runParaCommand(allocator, "./test/build-checks/sugar.para");
     defer allocator.free(output);
 
-    const outputs = try parseOutput(output, allocator);
+    var outputs = try parseOutput(output, allocator);
+    defer outputs.deinit(allocator);
 
     try testing.expectEqualStrings("raise", outputs.items[0].name);
     try testing.expectEqualStrings("int", outputs.items[0].type);
@@ -425,6 +592,99 @@ fn testJsonBigFile(allocator: std.mem.Allocator) !void {
     try testing.expect(std.mem.indexOf(u8, last, "\"title\":\"Painter\"") != null);
 }
 
+fn testZonGroupings(allocator: std.mem.Allocator) !void {
+    const output = try runParaZonCommand(allocator, "./test/build-checks/groupings.para");
+    defer allocator.free(output);
+
+    // ZON output is a Zig object literal starting with .{ and
+    // containing person, newPersonAge, age and salary fields.
+    try testing.expect(std.mem.indexOf(u8, output, ".{") != null);
+    try testing.expect(std.mem.indexOf(u8, output, ".person = .{") != null);
+    try testing.expect(std.mem.indexOf(u8, output, ".newPersonAge = 50") != null);
+    try testing.expect(std.mem.indexOf(u8, output, ".age = 50") != null);
+    try testing.expect(std.mem.indexOf(u8, output, ".salary = 50000") != null);
+}
+
+fn testZonBigFile(allocator: std.mem.Allocator) !void {
+    const output = try runParaZonCommand(allocator, "./test/build-checks/big_file.para");
+    defer allocator.free(output);
+
+    try testing.expect(std.mem.indexOf(u8, output, ".{") != null);
+    try testing.expect(std.mem.indexOf(u8, output, ".person = .{") != null);
+    try testing.expect(std.mem.indexOf(u8, output, ".working = true") != null);
+    try testing.expect(std.mem.indexOf(u8, output, ".name = \"Bob\"") != null);
+    try testing.expect(std.mem.indexOf(u8, output, ".job = .{") != null);
+    try testing.expect(std.mem.indexOf(u8, output, ".title = \"Painter\"") != null);
+}
+
+fn testYamlGroupings(allocator: std.mem.Allocator) !void {
+    const output = try runParaYamlCommand(allocator, "./test/build-checks/groupings.para");
+    defer allocator.free(output);
+
+    // YAML mapping with top-level newPersonAge and nested person.age and person.job.salary.
+    try testing.expect(std.mem.indexOf(u8, output, "newPersonAge: 50") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "person:") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "age: 50") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "salary: 50000") != null);
+}
+
+fn testYamlBigFile(allocator: std.mem.Allocator) !void {
+    const output = try runParaYamlCommand(allocator, "./test/build-checks/big_file.para");
+    defer allocator.free(output);
+
+    try testing.expect(std.mem.indexOf(u8, output, "person:") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "working: true") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "name: \"Bob\"") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "job:") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "title: \"Painter\"") != null);
+}
+
+fn testTomlGroupings(allocator: std.mem.Allocator) !void {
+    const output = try runParaTomlCommand(allocator, "./test/build-checks/groupings.para");
+    defer allocator.free(output);
+
+    // TOML root scalar and nested tables.
+    try testing.expect(std.mem.indexOf(u8, output, "newPersonAge = 50") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "[person]") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "age = 50") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "[person.job]") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "salary = 50000") != null);
+}
+
+fn testTomlBigFile(allocator: std.mem.Allocator) !void {
+    const output = try runParaTomlCommand(allocator, "./test/build-checks/big_file.para");
+    defer allocator.free(output);
+
+    try testing.expect(std.mem.indexOf(u8, output, "[person]") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "working = true") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "name = \"Bob\"") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "[person.job]") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "title = \"Painter\"") != null);
+}
+
+fn testRonGroupings(allocator: std.mem.Allocator) !void {
+    const output = try runParaRonCommand(allocator, "./test/build-checks/groupings.para");
+    defer allocator.free(output);
+
+    // RON tuple-like root with nested person object.
+    try testing.expect(std.mem.indexOf(u8, output, "(") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "newPersonAge: 50") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "person: (") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "age: 50") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "salary: 50000") != null);
+}
+
+fn testRonBigFile(allocator: std.mem.Allocator) !void {
+    const output = try runParaRonCommand(allocator, "./test/build-checks/big_file.para");
+    defer allocator.free(output);
+
+    try testing.expect(std.mem.indexOf(u8, output, "person: (") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "working: true") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "name: \"Bob\"") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "job: (") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "title: \"Painter\"") != null);
+}
+
 // Single test function that Zig will run
 test "para language tests" {
     // Set UTF-8 console output on Windows
@@ -447,8 +707,16 @@ test "para language tests" {
     runner.runTest("Group Assignments", testGroupAssignments);
     runner.runTest("Big File Processing", testBigFile);
     runner.runTest("Sugar Syntax Test", testSugar);
-    runner.runTest("JSON Groupings", testJsonGroupings);
-    runner.runTest("JSON Big File", testJsonBigFile);
+    runner.runTest("JSON Grouping Test", testJsonGroupings);
+    runner.runTest("JSON Big File Test", testJsonBigFile);
+    runner.runTest("ZON Grouping Test", testZonGroupings);
+    runner.runTest("ZON Big File Test", testZonBigFile);
+    runner.runTest("YAML Grouping Test", testYamlGroupings);
+    runner.runTest("YAML Big File Test", testYamlBigFile);
+    runner.runTest("TOML Grouping Test", testTomlGroupings);
+    runner.runTest("TOML Big File Test", testTomlBigFile);
+    runner.runTest("RON Grouping Test", testRonGroupings);
+    runner.runTest("RON Big File Test", testRonBigFile);
 
     // Generate the report
     runner.generateReport();

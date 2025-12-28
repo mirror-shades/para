@@ -9,7 +9,7 @@ pub fn writeFlatFile(tokens: []ParsedToken) !void {
     var file = try std.fs.cwd().createFile("build/output.f.para", .{});
     defer file.close();
 
-    var writer = file.writer();
+    var writer = file.deprecatedWriter();
     var new_line_needed: bool = false;
     for (tokens) |token| {
         if (token.token_type == .TKN_NEWLINE) {
@@ -60,7 +60,7 @@ pub fn writeBakedFile(tokens: []ParsedToken, preprocessor: *Preprocessor, alloca
     var file = try std.fs.cwd().createFile("build/output.f.para", .{});
     defer file.close();
 
-    var writer = file.writer();
+    var writer = file.deprecatedWriter();
     var new_line_needed: bool = false;
 
     for (tokens) |token| {
@@ -78,8 +78,8 @@ pub fn writeBakedFile(tokens: []ParsedToken, preprocessor: *Preprocessor, alloca
 
     // Create a buffered writer for better performance
     var i: usize = 0;
-    var current_line_scopes = std.ArrayList([]const u8).init(allocator);
-    defer current_line_scopes.deinit();
+    var current_line_scopes: std.ArrayList([]const u8) = .empty;
+    defer current_line_scopes.deinit(allocator);
 
     while (i < tokens.len) : (i += 1) {
         const current_token = tokens[i];
@@ -87,7 +87,7 @@ pub fn writeBakedFile(tokens: []ParsedToken, preprocessor: *Preprocessor, alloca
         switch (current_token.token_type) {
             .TKN_GROUP => {
                 // Handle groups for current line
-                try current_line_scopes.append(current_token.literal);
+                try current_line_scopes.append(allocator, current_token.literal);
                 try writer.print("{s}.", .{current_token.literal});
             },
             .TKN_IDENTIFIER => {
@@ -164,10 +164,4 @@ pub fn writeVariableState(file_path: []const u8, allocator: std.mem.Allocator) !
 
     const output_file = try std.fs.cwd().createFile(output_path, .{});
     defer output_file.close();
-
-    // Create a buffered writer for better performance
-    var buffered_writer = std.io.bufferedWriter(output_file.writer());
-
-    // Flush the remaining buffered data
-    try buffered_writer.flush();
 }

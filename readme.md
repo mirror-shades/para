@@ -16,9 +16,8 @@ Para is a minimalist data representation language designed for clear, typed data
 
 ## Syntax Rules
 
-- Every line starts with an identifier (variable or group).
-- Variables are declared with `:` followed by a type and `=` value.
-- Groups are formed using dotted paths (e.g. `person.age`, `person.job.salary`) and can be opened as scopes with braces (e.g. `person { ... }`).
+- Variables are declared with `:` followed by a type and `=` followed by a value or expression.
+- Groups are accessed using dotted paths (e.g. `person.age`, `person.job.salary`). Scopes with braces can also be used for clarity (e.g. `person { ... }`).
 - Statements end with a newline or EOF; whitespace and empty lines are ignored.
 - Identifiers must be unique within their scope (e.g., a variable and group cannot share a name).
 - All variables must be initialized; uninitialized declarations are a compile-time error.
@@ -95,7 +94,7 @@ temp const constant_temp: string = "temporary"
 
 ## Variable assignment
 
-Variables can be assigned to the value of another variable. The value is always copied not refrenced.
+Variables can be assigned to the value of another variable. The value is always copied, not referenced.
 
 ```para
 const x: int = 5
@@ -201,7 +200,7 @@ person {
 
 ### Step 4: Transpile
 
-The compressed format can be transpiled into other serialization languages:
+The compressed format can be transpiled into other formats:
 
 ```json
 {
@@ -212,4 +211,41 @@ The compressed format can be transpiled into other serialization languages:
     "nickname": "Bob"
   }
 }
+```
+
+Or into Zig object notation (ZON):
+
+```zig
+.{
+  .default_age = 25,
+  .person = .{
+    .age = 26,
+    .name = "Robert",
+    .nickname = "Bob",
+  },
+}
+```
+
+Or into TOML tables:
+
+```toml
+default_age = 25
+
+[person]
+age = 26
+name = "Robert"
+nickname = "Bob"
+```
+
+Or into RON:
+
+```ron
+(
+  default_age: 25,
+  person: (
+    age: 26,
+    name: "Robert",
+    nickname: "Bob",
+  ),
+)
 ```

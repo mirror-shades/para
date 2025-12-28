@@ -83,25 +83,16 @@ fn write(
             std.debug.print("Failed to write {s}: {}\n", .{ stream, e });
             return;
         };
-        writer.context.flush() catch |e| {
-            std.debug.print("Failed to flush {s} buffer: {}\n", .{ stream, e });
-            return;
-        };
     }
 }
 
 fn logOutWithPrefix(comptime actual_prefix: []const u8, comptime format: []const u8, args: anytype) void {
-    const writer = std.io.getStdOut().writer();
-    var bw = std.io.bufferedWriter(writer);
-    const buffered_writer = bw.writer();
-
-    write(buffered_writer, actual_prefix, format, args, "stdout");
+    const writer = std.fs.File.stdout().deprecatedWriter();
+    write(writer, actual_prefix, format, args, "stdout");
 }
 
 fn logErrWithPrefix(comptime actual_prefix: []const u8, comptime format: []const u8, args: anytype) void {
-    const stderr = std.io.getStdErr().writer();
-    var bw = std.io.bufferedWriter(stderr);
-    const writer = bw.writer();
+    const writer = std.fs.File.stderr().deprecatedWriter();
 
     std.debug.lockStdErr();
     defer std.debug.unlockStdErr();
