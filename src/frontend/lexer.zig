@@ -202,7 +202,7 @@ pub const Lexer = struct {
 
             // Fast-path handling for common leading letters used by
             // type/value keywords and the `temp` declaration modifier.
-            if (c == 'i' or c == 's' or c == 'b' or c == 'f' or c == 't' or c == 'f' or c == 'T' or c == 'F' or c == 'I' or c == 'F' or c == 'S' or c == 'B') {
+            if (c == 'i' or c == 's' or c == 'b' or c == 'f' or c == 't' or c == 'T' or c == 'F' or c == 'I' or c == 'S' or c == 'B') {
                 const current_column = self.column;
                 const word = try self.readWord();
 
@@ -211,10 +211,12 @@ pub const Lexer = struct {
                     (c == 'f' and std.mem.eql(u8, word, "float")) or
                     (c == 's' and std.mem.eql(u8, word, "string")) or
                     (c == 'b' and std.mem.eql(u8, word, "bool")) or
+                    (c == 't' and std.mem.eql(u8, word, "time")) or
                     (c == 'I' and std.mem.eql(u8, word, "INT")) or
                     (c == 'F' and std.mem.eql(u8, word, "FLOAT")) or
                     (c == 'S' and std.mem.eql(u8, word, "STRING")) or
-                    (c == 'B' and std.mem.eql(u8, word, "BOOL"));
+                    (c == 'B' and std.mem.eql(u8, word, "BOOL")) or
+                    (c == 'T' and std.mem.eql(u8, word, "TIME"));
 
                 const is_value_word =
                     (c == 't' and std.mem.eql(u8, word, "true")) or

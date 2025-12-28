@@ -6,7 +6,7 @@ const fs = std.fs;
 const printf = std.debug.print;
 
 // update this when adding tests
-const TEST_TOTAL = 15;
+const TEST_TOTAL = 16;
 
 // Legacy: previously tests attempted to discover `para` via argv. Keep this as
 // a no-op fallback; the build now supplies `PARA_EXE_PATH` instead.
@@ -585,6 +585,22 @@ fn testLineCommentsPreserveNewlines(allocator: std.mem.Allocator) !void {
     try testing.expectEqualStrings("2", outputs.items[1].value);
 }
 
+fn testTimeType(allocator: std.mem.Allocator) !void {
+    const output = try runParaCommand(allocator, "./test/build-checks/time.para");
+    defer allocator.free(output);
+
+    var outputs = try parseOutput(output, allocator);
+    defer outputs.deinit(allocator);
+
+    try testing.expectEqualStrings("created", outputs.items[0].name);
+    try testing.expectEqualStrings("time", outputs.items[0].type);
+    try testing.expectEqualStrings("1710434700000", outputs.items[0].value);
+
+    try testing.expectEqualStrings("created_ms", outputs.items[1].name);
+    try testing.expectEqualStrings("time", outputs.items[1].type);
+    try testing.expectEqualStrings("1710434700000", outputs.items[1].value);
+}
+
 fn testJsonGroupings(allocator: std.mem.Allocator) !void {
     const output = try runParaJsonCommand(allocator, "./test/build-checks/groupings.para");
     defer allocator.free(output);
@@ -743,6 +759,7 @@ test "para language tests" {
     runner.runTest("Big File Processing", testBigFile);
     runner.runTest("Sugar Syntax Test", testSugar);
     runner.runTest("Comment Newlines", testLineCommentsPreserveNewlines);
+    runner.runTest("Time Type Test", testTimeType);
     runner.runTest("JSON Grouping Test", testJsonGroupings);
     runner.runTest("JSON Big File Test", testJsonBigFile);
     runner.runTest("ZON Grouping Test", testZonGroupings);

@@ -104,6 +104,7 @@ pub const Preprocessor = struct {
             .float => ir.Value{ .float = variable.value.float },
             .string => ir.Value{ .string = try allocator.dupe(u8, variable.value.string) },
             .bool => ir.Value{ .bool = variable.value.bool },
+            .time => ir.Value{ .time = variable.value.time },
             .nothing => ir.Value{ .null_ = {} },
         };
     }
@@ -310,11 +311,12 @@ pub const Preprocessor = struct {
             } else if (id_pos > 0 and tokens[@intCast(id_pos)].token_type == .TKN_TYPE and
                 tokens[@intCast(id_pos - 1)].token_type == .TKN_IDENTIFIER)
             {
+                const type_tok = tokens[@intCast(id_pos)];
                 const id_tok = tokens[@intCast(id_pos - 1)];
                 try result.append(self.allocator, Variable{
                     .name = id_tok.literal,
                     .value = Value{ .nothing = {} },
-                    .type = .nothing,
+                    .type = try valueTypeFromLiteral(type_tok.literal),
                     .mutable = id_tok.is_mutable,
                     .temp = id_tok.is_temporary,
                     .has_decl_prefix = id_tok.has_decl_prefix,
@@ -509,8 +511,8 @@ pub const Preprocessor = struct {
     pub fn assignValue(self: *Preprocessor, assignment_array: []Variable) !void {
         if (assignment_array.len < 2) return error.InvalidAssignment;
 
-        // Last item is the value
-        const value_item = assignment_array[assignment_array.len - 1];
+        // Last item is the value (may be coerced below)
+        var value_item = assignment_array[assignment_array.len - 1];
         // Second to last is the identifier
         const identifier = assignment_array[assignment_array.len - 2];
         // Everything before the identifier is groups
@@ -524,6 +526,12 @@ pub const Preprocessor = struct {
         const declared_type = if (has_explicit_type) identifier.type else value_item.type;
         var final_mutable = identifier.mutable;
         var final_temp = identifier.temp;
+
+        // Coerce values for certain declared types (e.g. `time` accepts ISO strings).
+        if (has_explicit_type) {
+            const coerced = try coerceValueToType(self, declared_type, value_item);
+            value_item = coerced;
+        }
 
         // Step 2: Check if variable already exists
         if (target_scope.variables.get(identifier.name)) |existing_var| {
@@ -752,6 +760,7 @@ pub const Preprocessor = struct {
                         .float => Value{ .float = std.fmt.parseFloat(f64, token.literal) catch 0 },
                         .string => Value{ .string = token.literal },
                         .bool => Value{ .bool = std.mem.eql(u8, token.literal, "true") },
+                        .time => Value{ .time = std.fmt.parseInt(i64, token.literal, 10) catch 0 },
                         .nothing => Value{ .nothing = {} },
                     };
                     result_stack.append(self.allocator, value) catch unreachable;
@@ -860,6 +869,10 @@ pub const Preprocessor = struct {
                             a_int = val;
                             a_float = @floatFromInt(val);
                         },
+                        .time => |val| {
+                            a_int = val;
+                            a_float = @floatFromInt(val);
+                        },
                         .float => |val| {
                             use_float = true;
                             a_float = val;
@@ -875,6 +888,10 @@ pub const Preprocessor = struct {
 
                     switch (b) {
                         .int => |val| {
+                            b_int = val;
+                            b_float = @floatFromInt(val);
+                        },
+                        .time => |val| {
                             b_int = val;
                             b_float = @floatFromInt(val);
                         },
@@ -1023,6 +1040,7 @@ pub const Preprocessor = struct {
                                     .float => .float,
                                     .string => .string,
                                     .bool => .bool,
+                                    .time => .time,
                                     .nothing => .nothing,
                                 };
 
@@ -1058,6 +1076,7 @@ pub const Preprocessor = struct {
                                 .float => Reporting.log("{any}\n", .{tokens[i - 1].value.float}),
                                 .string => Reporting.log("\"{s}\"\n", .{tokens[i - 1].value.string}),
                                 .bool => Reporting.log("{s}\n", .{if (tokens[i - 1].value.bool) "TRUE" else "FALSE"}),
+                                .time => Reporting.log("{d}\n", .{tokens[i - 1].value.time}),
                                 .nothing => Reporting.log("(nothing)\n", .{}),
                             }
                             continue;
@@ -1100,6 +1119,7 @@ pub const Preprocessor = struct {
                                 .float => Reporting.log("{any}\n", .{var_value.value.float}),
                                 .string => Reporting.log("\"{s}\"\n", .{var_value.value.string}),
                                 .bool => Reporting.log("{s}\n", .{if (var_value.value.bool) "TRUE" else "FALSE"}),
+                                .time => Reporting.log("{d}\n", .{var_value.value.time}),
                                 .nothing => Reporting.log("(nothing)\n", .{}),
                             }
                         } else {
@@ -1181,6 +1201,7 @@ pub const Preprocessor = struct {
             .float => Reporting.log("{d:.2}", .{var_value.value.float}),
             .string => Reporting.log("\"{s}\"", .{var_value.value.string}),
             .bool => Reporting.log("{s}", .{if (var_value.value.bool) "true" else "false"}),
+            .time => Reporting.log("{d}", .{var_value.value.time}),
             .nothing => Reporting.log("(nothing)", .{}),
         }
         Reporting.log("\n", .{});
@@ -1272,6 +1293,154 @@ pub const Preprocessor = struct {
     }
 };
 
+fn valueTypeFromLiteral(lit: []const u8) !ValueType {
+    if (std.mem.eql(u8, lit, "int") or std.mem.eql(u8, lit, "INT")) return .int;
+    if (std.mem.eql(u8, lit, "float") or std.mem.eql(u8, lit, "FLOAT")) return .float;
+    if (std.mem.eql(u8, lit, "string") or std.mem.eql(u8, lit, "STRING")) return .string;
+    if (std.mem.eql(u8, lit, "bool") or std.mem.eql(u8, lit, "BOOL")) return .bool;
+    if (std.mem.eql(u8, lit, "time") or std.mem.eql(u8, lit, "TIME")) return .time;
+    return error.UnknownType;
+}
+
+fn coerceValueToType(self: *Preprocessor, declared_type: ValueType, value_item: Preprocessor.Variable) !Preprocessor.Variable {
+    var out = value_item;
+    switch (declared_type) {
+        .time => {
+            switch (value_item.type) {
+                .time => return out,
+                .int => {
+                    out.value = Value{ .time = value_item.value.int };
+                    out.type = .time;
+                    return out;
+                },
+                .string => {
+                    const millis = try parseTimeToUnixMillis(value_item.value.string);
+                    out.value = Value{ .time = millis };
+                    out.type = .time;
+                    return out;
+                },
+                else => {
+                    if (self.source_lines.len > 0) {
+                        self.underlineAt(value_item.line_number, value_item.token_number, 1);
+                    }
+                    return error.TypeMismatch;
+                },
+            }
+        },
+        else => return out,
+    }
+}
+
+fn parseTimeToUnixMillis(text: []const u8) !i64 {
+    const trimmed = std.mem.trim(u8, text, " \t\r\n\"");
+    if (trimmed.len == 0) return error.InvalidTime;
+
+    // Pure integer? treat as already-millis since epoch.
+    var all_digits = true;
+    for (trimmed) |c| {
+        if (c < '0' or c > '9') {
+            all_digits = false;
+            break;
+        }
+    }
+    if (all_digits) {
+        return std.fmt.parseInt(i64, trimmed, 10);
+    }
+
+    // Parse a subset of ISO-8601:
+    //   YYYY-MM-DD
+    //   YYYY-MM-DDTHH:MM:SSZ
+    //   YYYY-MM-DDTHH:MM:SS(.sss)?(Z|±HH:MM)?
+    var i: usize = 0;
+    const year = try parseFixedInt(trimmed, &i, 4);
+    try expectChar(trimmed, &i, '-');
+    const month = try parseFixedInt(trimmed, &i, 2);
+    try expectChar(trimmed, &i, '-');
+    const day = try parseFixedInt(trimmed, &i, 2);
+
+    var hour: i64 = 0;
+    var minute: i64 = 0;
+    var second: i64 = 0;
+    var millis: i64 = 0;
+
+    if (i < trimmed.len and (trimmed[i] == 'T' or trimmed[i] == 't' or trimmed[i] == ' ')) {
+        i += 1;
+        hour = try parseFixedInt(trimmed, &i, 2);
+        try expectChar(trimmed, &i, ':');
+        minute = try parseFixedInt(trimmed, &i, 2);
+        try expectChar(trimmed, &i, ':');
+        second = try parseFixedInt(trimmed, &i, 2);
+
+        if (i < trimmed.len and trimmed[i] == '.') {
+            i += 1;
+            const start = i;
+            while (i < trimmed.len and trimmed[i] >= '0' and trimmed[i] <= '9') : (i += 1) {}
+            const frac = trimmed[start..i];
+            if (frac.len > 0) {
+                // take up to 3 digits as milliseconds
+                var tmp: i64 = 0;
+                var n: usize = 0;
+                while (n < frac.len and n < 3) : (n += 1) {
+                    tmp = tmp * 10 + @as(i64, @intCast(frac[n] - '0'));
+                }
+                while (n < 3) : (n += 1) tmp *= 10;
+                millis = tmp;
+            }
+        }
+    }
+
+    var tz_offset_minutes: i64 = 0;
+    if (i < trimmed.len) {
+        const c = trimmed[i];
+        if (c == 'Z' or c == 'z') {
+            i += 1;
+        } else if (c == '+' or c == '-') {
+            const sign: i64 = if (c == '-') -1 else 1;
+            i += 1;
+            const tzh = try parseFixedInt(trimmed, &i, 2);
+            try expectChar(trimmed, &i, ':');
+            const tzm = try parseFixedInt(trimmed, &i, 2);
+            tz_offset_minutes = sign * (tzh * 60 + tzm);
+        }
+    }
+
+    if (i != trimmed.len) return error.InvalidTime;
+
+    const days = daysFromCivil(year, month, day);
+    const total_seconds = days * 86400 + hour * 3600 + minute * 60 + second - tz_offset_minutes * 60;
+    return total_seconds * 1000 + millis;
+}
+
+fn parseFixedInt(s: []const u8, idx: *usize, len: usize) !i64 {
+    if (idx.* + len > s.len) return error.InvalidTime;
+    var out: i64 = 0;
+    for (s[idx.* .. idx.* + len]) |c| {
+        if (c < '0' or c > '9') return error.InvalidTime;
+        out = out * 10 + @as(i64, @intCast(c - '0'));
+    }
+    idx.* += len;
+    return out;
+}
+
+fn expectChar(s: []const u8, idx: *usize, ch: u8) !void {
+    if (idx.* >= s.len or s[idx.*] != ch) return error.InvalidTime;
+    idx.* += 1;
+}
+
+fn daysFromCivil(year_in: i64, month_in: i64, day_in: i64) i64 {
+    // Howard Hinnant algorithm: days relative to 1970-01-01.
+    var y = year_in;
+    const m = month_in;
+    const d = day_in;
+    y -= if (m <= 2) 1 else 0;
+    const era = @divTrunc(y, 400);
+    const yoe = y - era * 400;
+    const mp: i64 = if (m > 2) (m - 3) else (m + 9);
+    const doy = @divTrunc(153 * mp + 2, 5) + d - 1;
+    const doe = yoe * 365 + @divTrunc(yoe, 4) - @divTrunc(yoe, 100) + doy;
+    return era * 146097 + doe - 719468;
+}
+
 // Helper function to check type compatibility
 fn isTypeCompatible(expected: ValueType, actual: ValueType) bool {
     return switch (expected) {
@@ -1279,6 +1448,7 @@ fn isTypeCompatible(expected: ValueType, actual: ValueType) bool {
         .float => actual == .float,
         .string => actual == .string,
         .bool => actual == .bool,
+        .time => actual == .time or actual == .int,
         .nothing => true, // nothing type can be assigned to anything
     };
 }

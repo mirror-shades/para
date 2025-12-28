@@ -42,6 +42,9 @@ pub fn writeFlatFile(tokens: []ParsedToken) !void {
                     .float => {
                         try writer.print("{d} ", .{token.value.float});
                     },
+                    .time => {
+                        try writer.print("{d} ", .{token.value.time});
+                    },
                     .nothing => {
                         try writer.writeAll("(nothing) ");
                     },
@@ -117,6 +120,7 @@ pub fn writeBakedFile(tokens: []ParsedToken, preprocessor: *Preprocessor, alloca
                             .float => try writer.print("{d:.2}", .{var_value.value.float}),
                             .string => try writer.print("\"{s}\"", .{var_value.value.string}),
                             .bool => try writer.print("{s}", .{if (var_value.value.bool) "TRUE" else "FALSE"}),
+                            .time => try writer.print("{d}", .{var_value.value.time}),
                             .nothing => try writer.print("UNDEFINED", .{}),
                         }
 

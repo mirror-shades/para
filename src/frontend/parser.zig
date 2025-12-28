@@ -686,8 +686,8 @@ fn grabLine(self: *Parser, current_token: Token) !std.ArrayList(Token) {
     return line_array;
 }
 
-fn parseIntFromLiteral(literal: []const u8) i32 {
-    return std.fmt.parseInt(i32, literal, 10) catch 0;
+fn parseIntFromLiteral(literal: []const u8) i64 {
+    return std.fmt.parseInt(i64, literal, 10) catch 0;
 }
 
 fn parseFloatFromLiteral(literal: []const u8) f64 {
@@ -711,6 +711,7 @@ fn parseValueFromLiteral(literal: []const u8, value_type: ValueType) Value {
         .float => .{ .float = parseFloatFromLiteral(literal) },
         .string => .{ .string = parseStringFromLiteral(literal) },
         .bool => .{ .bool = parseBoolFromLiteral(literal) },
+        .time => .{ .time = std.fmt.parseInt(i64, literal, 10) catch 0 },
         .nothing => .{ .nothing = {} },
     };
 }
