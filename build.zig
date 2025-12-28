@@ -17,8 +17,8 @@ pub fn build(b: *std.Build) void {
             .target = b.graph.host,
         }),
     });
-    test_exe.root_module.addImport("backend_escape", b.createModule(.{
-        .root_source_file = b.path("src/backend/escape.zig"),
+    test_exe.root_module.addImport("para_src", b.createModule(.{
+        .root_source_file = b.path("src/root.zig"),
         .target = b.graph.host,
     }));
 

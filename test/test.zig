@@ -4,9 +4,14 @@ const testing = std.testing;
 const process = std.process;
 const fs = std.fs;
 const printf = std.debug.print;
-
-// Pull in backend unit tests (e.g. string escaping helpers).
-const _backend_escape_tests = @import("backend_escape");
+const para_src = @import("para_src");
+const Preprocessor = para_src.Preprocessor;
+const token = para_src.token;
+const ir = para_src.ir;
+const json_backend = para_src.json_backend;
+const yaml_backend = para_src.yaml_backend;
+const toml_backend = para_src.toml_backend;
+const zon_backend = para_src.zon_backend;
 
 const TEST_TOTAL = 17;
 
@@ -762,6 +767,58 @@ fn testRonBigFile(allocator: std.mem.Allocator) !void {
     try testing.expect(std.mem.indexOf(u8, output, "name: \"Bob\"") != null);
     try testing.expect(std.mem.indexOf(u8, output, "job: (") != null);
     try testing.expect(std.mem.indexOf(u8, output, "title: \"Painter\"") != null);
+}
+
+test "IR build fails on OOM (no silent export data loss)" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var pre = Preprocessor.init(allocator);
+    defer pre.deinit();
+
+    const long_string = "this string is definitely longer than sixteen bytes";
+    try pre.root_scope.variables.put("a", .{
+        .name = "a",
+        .value = token.Value{ .string = long_string },
+        .type = .string,
+        .mutable = false,
+        .temp = false,
+        .has_decl_prefix = false,
+        .line_number = 0,
+        .token_number = 0,
+    });
+
+    var backing: [16]u8 = undefined;
+    var fba = std.heap.FixedBufferAllocator.init(&backing);
+
+    try testing.expectError(error.OutOfMemory, pre.buildIrProgramWithAllocator(fba.allocator()));
+}
+
+test "exporters reject invalid UTF-8 strings" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var program = ir.Program.init(allocator);
+    defer program.deinit(allocator);
+
+    const invalid = &[_]u8{ 0xC3, 0x28 };
+    try program.globals.append(allocator, .{ .name = "s", .value = ir.Value{ .string = invalid } });
+
+    var buf: [256]u8 = undefined;
+
+    var json_stream = std.io.fixedBufferStream(&buf);
+    try testing.expectError(error.InvalidUtf8String, json_backend.writeProgramJson(json_stream.writer(), &program));
+
+    var yaml_stream = std.io.fixedBufferStream(&buf);
+    try testing.expectError(error.InvalidUtf8String, yaml_backend.writeProgramYaml(yaml_stream.writer(), &program));
+
+    var toml_stream = std.io.fixedBufferStream(&buf);
+    try testing.expectError(error.InvalidUtf8String, toml_backend.writeProgramToml(toml_stream.writer(), &program));
+
+    var zon_stream = std.io.fixedBufferStream(&buf);
+    try testing.expectError(error.InvalidUtf8String, zon_backend.writeProgramZon(zon_stream.writer(), &program));
 }
 
 test "para language tests" {

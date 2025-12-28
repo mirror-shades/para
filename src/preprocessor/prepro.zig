@@ -67,7 +67,12 @@ pub const Preprocessor = struct {
     }
 
     pub fn buildIrProgram(self: *Preprocessor) !ir.Program {
-        var program = ir.Program.init(self.allocator);
+        return self.buildIrProgramWithAllocator(self.allocator);
+    }
+
+    pub fn buildIrProgramWithAllocator(self: *Preprocessor, allocator: std.mem.Allocator) !ir.Program {
+        var program = ir.Program.init(allocator);
+        errdefer program.deinit(allocator);
 
         // Emit all variables in the root scope as top-level bindings.
         var var_it = self.root_scope.variables.iterator();
@@ -75,8 +80,8 @@ pub const Preprocessor = struct {
             const variable = entry.value_ptr.*;
             if (variable.type == .nothing or variable.temp) continue;
 
-            const ir_value = valueToIrValue(self.allocator, variable) catch continue;
-            try program.globals.append(self.allocator, .{
+            const ir_value = try valueToIrValue(allocator, variable);
+            try program.globals.append(allocator, .{
                 .name = entry.key_ptr.*,
                 .value = ir_value,
             });
@@ -88,8 +93,8 @@ pub const Preprocessor = struct {
             const scope_name = scope_entry.key_ptr.*;
             const scope_ptr = scope_entry.value_ptr.*;
 
-            const obj_ptr = scopeToObject(self.allocator, scope_ptr) catch continue;
-            try program.globals.append(self.allocator, .{
+            const obj_ptr = try scopeToObject(allocator, scope_ptr);
+            try program.globals.append(allocator, .{
                 .name = scope_name,
                 .value = ir.Value{ .object = obj_ptr },
             });
@@ -112,6 +117,10 @@ pub const Preprocessor = struct {
     fn scopeToObject(allocator: std.mem.Allocator, scope: *Scope) !*ir.Object {
         const obj_ptr = try allocator.create(ir.Object);
         obj_ptr.* = ir.Object.init(allocator);
+        errdefer {
+            obj_ptr.deinit(allocator);
+            allocator.destroy(obj_ptr);
+        }
 
         // Add variables as fields.
         var var_it = scope.variables.iterator();
@@ -119,7 +128,7 @@ pub const Preprocessor = struct {
             const variable = entry.value_ptr.*;
             if (variable.type == .nothing or variable.temp) continue;
 
-            const ir_value = valueToIrValue(allocator, variable) catch continue;
+            const ir_value = try valueToIrValue(allocator, variable);
             try obj_ptr.fields.append(allocator, .{
                 .name = entry.key_ptr.*,
                 .value = ir_value,
@@ -132,7 +141,7 @@ pub const Preprocessor = struct {
             const child_name = nested_entry.key_ptr.*;
             const child_scope = nested_entry.value_ptr.*;
 
-            const child_obj = scopeToObject(allocator, child_scope) catch continue;
+            const child_obj = try scopeToObject(allocator, child_scope);
             try obj_ptr.fields.append(allocator, .{
                 .name = child_name,
                 .value = ir.Value{ .object = child_obj },

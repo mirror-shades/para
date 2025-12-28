@@ -5,11 +5,7 @@ const TokenImport = @import("../token/token.zig");
 const Value = TokenImport.Value;
 const ValueType = TokenImport.ValueType;
 
-pub fn writeFlatFile(tokens: []ParsedToken) !void {
-    var file = try std.fs.cwd().createFile("build/output.f.para", .{});
-    defer file.close();
-
-    var writer = file.deprecatedWriter();
+pub fn writeFlatFileToWriter(writer: anytype, tokens: []ParsedToken) !void {
     var new_line_needed: bool = false;
     for (tokens) |token| {
         if (token.token_type == .TKN_NEWLINE) {
@@ -56,6 +52,12 @@ pub fn writeFlatFile(tokens: []ParsedToken) !void {
             else => try writer.print("UNUSED TOKEN ENCOUNTERED:  {s} \n", .{token.literal}),
         }
     }
+}
+
+pub fn writeFlatFile(tokens: []ParsedToken) !void {
+    var file = try std.fs.cwd().createFile("build/output.f.para", .{});
+    defer file.close();
+    try writeFlatFileToWriter(file.deprecatedWriter(), tokens);
 }
 
 pub fn writeBakedFile(tokens: []ParsedToken, preprocessor: *Preprocessor, allocator: std.mem.Allocator) !void {
@@ -147,13 +149,4 @@ pub fn writeBakedFile(tokens: []ParsedToken, preprocessor: *Preprocessor, alloca
             else => {},
         }
     }
-}
-
-pub fn writeVariableState(file_path: []const u8, allocator: std.mem.Allocator) !void {
-    const base_name = std.fs.path.basename(file_path);
-    const output_path = try std.fmt.allocPrint(allocator, "build/{s}", .{base_name});
-    defer allocator.free(output_path);
-
-    const output_file = try std.fs.cwd().createFile(output_path, .{});
-    defer output_file.close();
 }

@@ -34,6 +34,7 @@ fn writeKeyValue(
     name: []const u8,
     value: ir.Value,
 ) anyerror!void {
+    try escape.ensureValidUtf8(name);
     try writer.writeAll(name);
     try writer.writeAll(" = ");
     try writeScalar(writer, value);
@@ -56,6 +57,7 @@ fn writeTable(
     var i: usize = 0;
     while (i < path.len) : (i += 1) {
         if (i != 0) try writer.writeByte('.');
+        try escape.ensureValidUtf8(path[i]);
         try writer.writeAll(path[i]);
     }
     try writer.writeAll("]\n");
@@ -112,5 +114,6 @@ fn writeScalar(
 }
 
 fn writeString(writer: anytype, bytes: []const u8) anyerror!void {
+    try escape.ensureValidUtf8(bytes);
     try escape.writeTomlBasicString(writer, bytes);
 }

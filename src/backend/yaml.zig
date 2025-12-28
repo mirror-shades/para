@@ -20,6 +20,7 @@ fn writeBinding(
     value: ir.Value,
 ) anyerror!void {
     try writeIndent(writer, indent);
+    try escape.ensureValidUtf8(name);
     try writer.writeAll(name);
 
     switch (value) {
@@ -63,6 +64,7 @@ fn writeScalar(
 }
 
 fn writeString(writer: anytype, bytes: []const u8) anyerror!void {
+    try escape.ensureValidUtf8(bytes);
     try escape.writeYamlDoubleQuotedString(writer, bytes);
 }
 

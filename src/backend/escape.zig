@@ -1,5 +1,9 @@
 const std = @import("std");
 
+pub fn ensureValidUtf8(bytes: []const u8) !void {
+    if (!std.unicode.utf8ValidateSlice(bytes)) return error.InvalidUtf8String;
+}
+
 pub fn writeJsonString(writer: anytype, bytes: []const u8) @TypeOf(writer).Error!void {
     try writer.writeByte('"');
     for (bytes) |c| {

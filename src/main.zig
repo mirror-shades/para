@@ -33,6 +33,8 @@ pub fn main() !void {
     var output_yaml = false;
     var output_toml = false;
     var output_ron = false;
+    var output_path: ?[]const u8 = null;
+    var use_stdout: bool = false;
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
@@ -68,6 +70,13 @@ pub fn main() !void {
             output_toml = true;
         } else if (std.mem.eql(u8, arg, "--ron")) {
             output_ron = true;
+        } else if (std.mem.eql(u8, arg, "--out")) {
+            output_path = args.next() orelse {
+                Reporting.throwError("--out requires a path\n", .{});
+                return;
+            };
+        } else if (std.mem.eql(u8, arg, "--stdout")) {
+            use_stdout = true;
         } else if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "-help") or std.mem.eql(u8, arg, "--h")) {
             printUsage(program_name);
             return;
@@ -78,28 +87,23 @@ pub fn main() !void {
 
     var reporter = Reporting.Reporter.init(debug_lexer, debug_parser, debug_preprocessor);
 
-    const file_path = filename orelse {
-        printUsage(program_name);
-        return;
-    };
-
-    if (!std.mem.endsWith(u8, file_path, ".para")) {
-        Reporting.throwError("File must have a .para extension\n", .{});
-        return;
-    }
-
-    const file = try std.fs.cwd().openFile(file_path, .{});
-    defer file.close();
-
     const max_input_bytes: usize = 64 * 1024 * 1024;
-    const contents = try file.readToEndAlloc(allocator, max_input_bytes);
 
-    const build_dir = "build";
-    std.fs.cwd().access(build_dir, .{}) catch {
-        std.fs.cwd().makeDir(build_dir) catch |e| {
-            Reporting.throwError("Error creating build directory: {s}\n", .{@errorName(e)});
+    const file_path = filename orelse "-";
+    const contents = blk: {
+        if (std.mem.eql(u8, file_path, "-")) {
+            const stdin_file = std.fs.File.stdin();
+            break :blk try stdin_file.readToEndAlloc(allocator, max_input_bytes);
+        }
+
+        if (!std.mem.endsWith(u8, file_path, ".para")) {
+            Reporting.throwError("File must have a .para extension (or use '-' for stdin)\n", .{});
             return;
-        };
+        }
+
+        const file = try std.fs.cwd().openFile(file_path, .{});
+        defer file.close();
+        break :blk try file.readToEndAlloc(allocator, max_input_bytes);
     };
 
     var para_lexer = try Lexer.init(allocator, contents);
@@ -148,25 +152,51 @@ pub fn main() !void {
         var ir_program = try preprocessor.buildIrProgram();
         defer ir_program.deinit(allocator);
 
-        var stdout_file = std.fs.File.stdout().deprecatedWriter();
+        var out_file: ?std.fs.File = null;
+        defer if (out_file) |*f| f.close();
+
+        const writer = blk: {
+            if (use_stdout or output_path == null or std.mem.eql(u8, output_path.?, "-")) {
+                break :blk std.fs.File.stdout().deprecatedWriter();
+            }
+
+            const out = output_path.?;
+            if (std.fs.path.dirname(out)) |dir| {
+                std.fs.cwd().makePath(dir) catch |e| switch (e) {
+                    error.PathAlreadyExists => {},
+                    else => return e,
+                };
+            }
+            out_file = try std.fs.cwd().createFile(out, .{});
+            break :blk out_file.?.deprecatedWriter();
+        };
 
         if (output_json) {
-            try json_backend.writeProgramJson(stdout_file, &ir_program);
+            try json_backend.writeProgramJson(writer, &ir_program);
         } else if (output_zon) {
-            try zon_backend.writeProgramZon(stdout_file, &ir_program);
+            try zon_backend.writeProgramZon(writer, &ir_program);
         } else if (output_yaml) {
-            try yaml_backend.writeProgramYaml(stdout_file, &ir_program);
+            try yaml_backend.writeProgramYaml(writer, &ir_program);
         } else if (output_toml) {
-            try toml_backend.writeProgramToml(stdout_file, &ir_program);
+            try toml_backend.writeProgramToml(writer, &ir_program);
         } else {
-            try ron_backend.writeProgramRon(stdout_file, &ir_program);
+            try ron_backend.writeProgramRon(writer, &ir_program);
         }
 
-        try stdout_file.writeByte('\n');
+        try writer.writeByte('\n');
     } else {
-        try Writer.writeFlatFile(para_parser.parsed_tokens.items);
-
-        try Writer.writeVariableState("output.w.para", allocator);
+        if (!use_stdout and output_path != null and !std.mem.eql(u8, output_path.?, "-")) {
+            const out = output_path.?;
+            if (std.fs.path.dirname(out)) |dir| {
+                std.fs.cwd().makePath(dir) catch |e| switch (e) {
+                    error.PathAlreadyExists => {},
+                    else => return e,
+                };
+            }
+            var file = try std.fs.cwd().createFile(out, .{});
+            defer file.close();
+            try Writer.writeFlatFileToWriter(file.deprecatedWriter(), para_parser.parsed_tokens.items);
+        }
 
         if (debug_preprocessor) {
             try preprocessor.dumpVariables(allocator);
@@ -213,5 +243,7 @@ fn printUsage(program_name: []const u8) void {
     Reporting.log("  --yaml               Emit YAML (experimental)\n", .{});
     Reporting.log("  --toml               Emit TOML (experimental)\n", .{});
     Reporting.log("  --ron                Emit RON (experimental)\n", .{});
+    Reporting.log("  --out <path>          Write output to file (use '-' for stdout)\n", .{});
+    Reporting.log("  --stdout              Force stdout output\n", .{});
     std.process.exit(0);
 }

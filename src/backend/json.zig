@@ -5,7 +5,7 @@ const escape = @import("./escape.zig");
 pub fn writeProgramJson(
     writer: anytype,
     program: *const ir.Program,
-) @TypeOf(writer).Error!void {
+) anyerror!void {
     try writer.writeByte('{');
 
     var first: bool = true;
@@ -23,7 +23,7 @@ pub fn writeProgramJson(
     try writer.writeByte('}');
 }
 
-fn writeValue(writer: anytype, value: ir.Value) @TypeOf(writer).Error!void {
+fn writeValue(writer: anytype, value: ir.Value) anyerror!void {
     switch (value) {
         .int => |v| try std.fmt.format(writer, "{}", .{v}),
         .float => |v| try std.fmt.format(writer, "{}", .{v}),
@@ -35,7 +35,7 @@ fn writeValue(writer: anytype, value: ir.Value) @TypeOf(writer).Error!void {
     }
 }
 
-fn writeObject(writer: anytype, obj: *const ir.Object) @TypeOf(writer).Error!void {
+fn writeObject(writer: anytype, obj: *const ir.Object) anyerror!void {
     try writer.writeByte('{');
 
     var first: bool = true;
@@ -53,6 +53,7 @@ fn writeObject(writer: anytype, obj: *const ir.Object) @TypeOf(writer).Error!voi
     try writer.writeByte('}');
 }
 
-fn writeString(writer: anytype, bytes: []const u8) @TypeOf(writer).Error!void {
+fn writeString(writer: anytype, bytes: []const u8) anyerror!void {
+    try escape.ensureValidUtf8(bytes);
     try escape.writeJsonString(writer, bytes);
 }
