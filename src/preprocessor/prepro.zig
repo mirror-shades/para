@@ -74,34 +74,54 @@ pub const Preprocessor = struct {
         var program = ir.Program.init(allocator);
         errdefer program.deinit(allocator);
 
-        // Emit all variables in the root scope as top-level bindings.
+        // Emit deterministic, sorted top-level bindings.
+        var names: std.ArrayList([]const u8) = .empty;
+        defer names.deinit(allocator);
+
         var var_it = self.root_scope.variables.iterator();
         while (var_it.next()) |entry| {
             const variable = entry.value_ptr.*;
             if (variable.type == .nothing or variable.temp) continue;
-
-            const ir_value = try valueToIrValue(allocator, variable);
-            try program.globals.append(allocator, .{
-                .name = entry.key_ptr.*,
-                .value = ir_value,
-            });
+            try names.append(allocator, entry.key_ptr.*);
         }
 
-        // Emit each nested scope as an object at the top level.
         var scope_it = self.root_scope.nested_scopes.iterator();
-        while (scope_it.next()) |scope_entry| {
-            const scope_name = scope_entry.key_ptr.*;
-            const scope_ptr = scope_entry.value_ptr.*;
+        while (scope_it.next()) |entry| {
+            const name = entry.key_ptr.*;
+            if (self.root_scope.variables.get(name) != null) {
+                Reporting.throwError("Identifier collision: '{s}' is both a variable and a group\n", .{name});
+                return error.IdentifierCollision;
+            }
+            try names.append(allocator, name);
+        }
 
-            const obj_ptr = try scopeToObject(allocator, scope_ptr);
-            try program.globals.append(allocator, .{
-                .name = scope_name,
-                .value = ir.Value{ .object = obj_ptr },
-            });
+        std.sort.heap([]const u8, names.items, {}, NameSort.lessThan);
+
+        for (names.items) |name| {
+            if (self.root_scope.variables.get(name)) |variable| {
+                const ir_value = try valueToIrValue(allocator, variable);
+                try program.globals.append(allocator, .{ .name = name, .value = ir_value });
+                continue;
+            }
+
+            if (self.root_scope.nested_scopes.get(name)) |scope_ptr| {
+                const obj_ptr = try scopeToObject(allocator, scope_ptr);
+                try program.globals.append(allocator, .{
+                    .name = name,
+                    .value = ir.Value{ .object = obj_ptr },
+                });
+                continue;
+            }
         }
 
         return program;
     }
+
+    const NameSort = struct {
+        fn lessThan(_: void, a: []const u8, b: []const u8) bool {
+            return std.mem.lessThan(u8, a, b);
+        }
+    };
 
     fn valueToIrValue(allocator: std.mem.Allocator, variable: Variable) !ir.Value {
         return switch (variable.type) {
@@ -122,30 +142,45 @@ pub const Preprocessor = struct {
             allocator.destroy(obj_ptr);
         }
 
-        // Add variables as fields.
+        var names: std.ArrayList([]const u8) = .empty;
+        defer names.deinit(allocator);
+
+        // Collect exported variable fields.
         var var_it = scope.variables.iterator();
         while (var_it.next()) |entry| {
             const variable = entry.value_ptr.*;
             if (variable.type == .nothing or variable.temp) continue;
-
-            const ir_value = try valueToIrValue(allocator, variable);
-            try obj_ptr.fields.append(allocator, .{
-                .name = entry.key_ptr.*,
-                .value = ir_value,
-            });
+            try names.append(allocator, entry.key_ptr.*);
         }
 
-        // Add nested scopes as nested objects.
+        // Collect nested scopes.
         var nested_it = scope.nested_scopes.iterator();
-        while (nested_it.next()) |nested_entry| {
-            const child_name = nested_entry.key_ptr.*;
-            const child_scope = nested_entry.value_ptr.*;
+        while (nested_it.next()) |entry| {
+            const name = entry.key_ptr.*;
+            if (scope.variables.get(name) != null) {
+                Reporting.throwError("Identifier collision: '{s}' is both a variable and a group\n", .{name});
+                return error.IdentifierCollision;
+            }
+            try names.append(allocator, name);
+        }
 
-            const child_obj = try scopeToObject(allocator, child_scope);
-            try obj_ptr.fields.append(allocator, .{
-                .name = child_name,
-                .value = ir.Value{ .object = child_obj },
-            });
+        std.sort.heap([]const u8, names.items, {}, NameSort.lessThan);
+
+        for (names.items) |name| {
+            if (scope.variables.get(name)) |variable| {
+                const ir_value = try valueToIrValue(allocator, variable);
+                try obj_ptr.fields.append(allocator, .{ .name = name, .value = ir_value });
+                continue;
+            }
+
+            if (scope.nested_scopes.get(name)) |child_scope| {
+                const child_obj = try scopeToObject(allocator, child_scope);
+                try obj_ptr.fields.append(allocator, .{
+                    .name = name,
+                    .value = ir.Value{ .object = child_obj },
+                });
+                continue;
+            }
         }
 
         return obj_ptr;

@@ -1,0 +1,2 @@
+const div: int = 6 / 2
+div?

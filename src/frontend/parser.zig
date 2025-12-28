@@ -439,7 +439,7 @@ pub const Parser = struct {
                     continue;
                 },
                 .TKN_VALUE => {
-                    const parsed_value = parseValueFromLiteral(current_token.literal, current_token.value_type);
+                    const parsed_value = parseValueFromToken(current_token);
                     try self.parsed_tokens.append(self.allocator, ParsedToken{
                         .token_type = .TKN_VALUE,
                         .literal = current_token.literal,
@@ -662,14 +662,6 @@ fn grabLine(self: *Parser, current_token: Token) !std.ArrayList(Token) {
     return line_array;
 }
 
-fn parseIntFromLiteral(literal: []const u8) i64 {
-    return std.fmt.parseInt(i64, literal, 10) catch 0;
-}
-
-fn parseFloatFromLiteral(literal: []const u8) f64 {
-    return std.fmt.parseFloat(f64, literal) catch 0;
-}
-
 fn parseStringFromLiteral(literal: []const u8) []const u8 {
     if (literal.len >= 2 and literal[0] == '"' and literal[literal.len - 1] == '"') {
         return literal[1 .. literal.len - 1];
@@ -681,13 +673,33 @@ fn parseBoolFromLiteral(literal: []const u8) bool {
     return std.mem.eql(u8, literal, "true") or std.mem.eql(u8, literal, "TRUE");
 }
 
-fn parseValueFromLiteral(literal: []const u8, value_type: ValueType) Value {
-    return switch (value_type) {
-        .int => .{ .int = parseIntFromLiteral(literal) },
-        .float => .{ .float = parseFloatFromLiteral(literal) },
-        .string => .{ .string = parseStringFromLiteral(literal) },
-        .bool => .{ .bool = parseBoolFromLiteral(literal) },
-        .time => .{ .time = std.fmt.parseInt(i64, literal, 10) catch 0 },
+fn parseIntFromLiteralChecked(literal: []const u8, line_number: usize, token_number: usize) i64 {
+    return std.fmt.parseInt(i64, literal, 10) catch |e| {
+        Reporting.throwError(
+            "Invalid integer literal '{s}' (line {d}, token {d}): {s}\n",
+            .{ literal, line_number, token_number, @errorName(e) },
+        );
+        return 0;
+    };
+}
+
+fn parseFloatFromLiteralChecked(literal: []const u8, line_number: usize, token_number: usize) f64 {
+    return std.fmt.parseFloat(f64, literal) catch |e| {
+        Reporting.throwError(
+            "Invalid float literal '{s}' (line {d}, token {d}): {s}\n",
+            .{ literal, line_number, token_number, @errorName(e) },
+        );
+        return 0;
+    };
+}
+
+fn parseValueFromToken(tok: Token) Value {
+    return switch (tok.value_type) {
+        .int => .{ .int = parseIntFromLiteralChecked(tok.literal, tok.line_number, tok.token_number) },
+        .float => .{ .float = parseFloatFromLiteralChecked(tok.literal, tok.line_number, tok.token_number) },
+        .string => .{ .string = parseStringFromLiteral(tok.literal) },
+        .bool => .{ .bool = parseBoolFromLiteral(tok.literal) },
+        .time => .{ .time = parseIntFromLiteralChecked(tok.literal, tok.line_number, tok.token_number) },
         .nothing => .{ .nothing = {} },
     };
 }

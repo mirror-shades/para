@@ -1,0 +1,3 @@
+const person.age: int = 1
+const b: int = 1
+const a: int = 2

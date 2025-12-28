@@ -86,15 +86,23 @@ pub const Lexer = struct {
         }
     }
 
-    fn skipMultiline(self: *Lexer) void {
+    fn skipMultiline(self: *Lexer, start_line: usize, start_column: usize) !void {
         while (self.peek()) |c| {
             if (c == '*' and self.peekNext() == '/') {
                 self.advance();
                 self.advance();
-                break;
+                return;
             }
             self.advance();
         }
+
+        if (start_line > 0 and start_line <= self.lines.items.len) {
+            const line_content = self.lines.items[start_line - 1];
+            const column = if (start_column > 0) start_column - 1 else 0;
+            reporting.underline(line_content, column, 2);
+        }
+        printError("Unterminated multiline comment at line {d}, column {d}\n", .{ start_line, start_column });
+        return error.UnterminatedMultilineComment;
     }
 
     fn skipLine(self: *Lexer) void {
@@ -165,9 +173,10 @@ pub const Lexer = struct {
 
             if (c == '/') {
                 const current_column = self.column;
+                const start_line = self.line;
                 self.advance();
                 if (self.peek() == '*') {
-                    self.skipMultiline();
+                    try self.skipMultiline(start_line, current_column);
                 } else if (self.peek() == '/') {
                     self.advance();
                     self.skipLine();
@@ -180,7 +189,6 @@ pub const Lexer = struct {
                         .token_number = current_column,
                     });
                     self.token_count += 1;
-                    self.advance();
                 }
                 continue;
             }

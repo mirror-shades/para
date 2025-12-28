@@ -13,7 +13,7 @@ const yaml_backend = para_src.yaml_backend;
 const toml_backend = para_src.toml_backend;
 const zon_backend = para_src.zon_backend;
 
-const TEST_TOTAL = 17;
+const TEST_TOTAL = 21;
 
 fn print(comptime format: []const u8) void {
     printf(format, .{});
@@ -769,6 +769,42 @@ fn testRonBigFile(allocator: std.mem.Allocator) !void {
     try testing.expect(std.mem.indexOf(u8, output, "title: \"Painter\"") != null);
 }
 
+fn testDivisionOperator(allocator: std.mem.Allocator) !void {
+    const output = try runParaCommand(allocator, "./test/build-checks/division.para");
+    defer allocator.free(output);
+
+    var outputs = try parseOutput(output, allocator);
+    defer outputs.deinit(allocator);
+
+    try testing.expectEqualStrings("div", outputs.items[0].name);
+    try testing.expectEqualStrings("int", outputs.items[0].type);
+    try testing.expectEqualStrings("3", outputs.items[0].value);
+}
+
+fn testUnterminatedMultilineCommentFails(allocator: std.mem.Allocator) !void {
+    const output = try runParaCommandExpectFailure(allocator, "./test/build-checks/unterminated_comment.para");
+    defer allocator.free(output);
+
+    try testing.expect(
+        std.mem.indexOf(u8, output, "Unterminated multiline comment") != null or
+            std.mem.indexOf(u8, output, "UnterminatedMultilineComment") != null,
+    );
+}
+
+fn testIntegerOverflowLiteralFails(allocator: std.mem.Allocator) !void {
+    const output = try runParaCommandExpectFailure(allocator, "./test/build-checks/int_overflow.para");
+    defer allocator.free(output);
+
+    try testing.expect(std.mem.indexOf(u8, output, "Invalid integer literal") != null);
+}
+
+fn testJsonDeterministicOrdering(allocator: std.mem.Allocator) !void {
+    const output = try runParaJsonCommand(allocator, "./test/build-checks/json_order.para");
+    defer allocator.free(output);
+
+    try testing.expectEqualStrings("{\"a\":2,\"b\":1,\"person\":{\"age\":1}}\n", output);
+}
+
 test "IR build fails on OOM (no silent export data loss)" {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
@@ -843,8 +879,12 @@ test "para language tests" {
     runner.runTest("Comment Newlines", testLineCommentsPreserveNewlines);
     runner.runTest("Time Type Test", testTimeType);
     runner.runTest("Invalid Time Test", testTimeTypeInvalid);
+    runner.runTest("Division Operator", testDivisionOperator);
+    runner.runTest("Unterminated /* */", testUnterminatedMultilineCommentFails);
+    runner.runTest("Int Overflow Test", testIntegerOverflowLiteralFails);
     runner.runTest("JSON Grouping Test", testJsonGroupings);
     runner.runTest("JSON Big File Test", testJsonBigFile);
+    runner.runTest("JSON Ordering Test", testJsonDeterministicOrdering);
     runner.runTest("ZON Grouping Test", testZonGroupings);
     runner.runTest("ZON Big File Test", testZonBigFile);
     runner.runTest("YAML Grouping Test", testYamlGroupings);
