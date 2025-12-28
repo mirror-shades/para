@@ -58,7 +58,6 @@ pub fn writeFlatFile(tokens: []ParsedToken) !void {
     }
 }
 
-// Writes a baked down version of the file with lookups replaced by their actual values
 pub fn writeBakedFile(tokens: []ParsedToken, preprocessor: *Preprocessor, allocator: std.mem.Allocator) !void {
     var file = try std.fs.cwd().createFile("build/output.f.para", .{});
     defer file.close();
@@ -79,7 +78,6 @@ pub fn writeBakedFile(tokens: []ParsedToken, preprocessor: *Preprocessor, alloca
 
     std.debug.print("Writing baked file\n", .{});
 
-    // Create a buffered writer for better performance
     var i: usize = 0;
     var current_line_scopes: std.ArrayList([]const u8) = .empty;
     defer current_line_scopes.deinit(allocator);
@@ -89,32 +87,26 @@ pub fn writeBakedFile(tokens: []ParsedToken, preprocessor: *Preprocessor, alloca
 
         switch (current_token.token_type) {
             .TKN_GROUP => {
-                // Handle groups for current line
                 try current_line_scopes.append(allocator, current_token.literal);
                 try writer.print("{s}.", .{current_token.literal});
             },
             .TKN_IDENTIFIER => {
-                // Write identifier
                 try writer.print("{s} ", .{current_token.literal});
             },
             .TKN_TYPE => {
-                // Write type
                 try writer.print(":{s} ", .{current_token.literal});
             },
             .TKN_VALUE_ASSIGN => {
                 try writer.print("= ", .{});
 
-                // If next token is a lookup, resolve it and write the value
                 if (i + 1 < tokens.len and (tokens[i + 1].token_type == .TKN_IDENTIFIER or
                     tokens[i + 1].token_type == .TKN_GROUP or
                     tokens[i + 1].token_type == .TKN_LOOKUP))
                 {
-                    // This is a variable lookup
                     const lookup_path = try preprocessor.buildLookupPathForward(tokens, i + 1);
                     defer allocator.free(lookup_path);
 
                     if (preprocessor.getLookupValue(lookup_path)) |var_value| {
-                        // Found the lookup value - write it directly
                         switch (var_value.type) {
                             .int => try writer.print("{d}", .{var_value.value.int}),
                             .float => try writer.print("{d:.2}", .{var_value.value.float}),
@@ -124,19 +116,16 @@ pub fn writeBakedFile(tokens: []ParsedToken, preprocessor: *Preprocessor, alloca
                             .nothing => try writer.print("UNDEFINED", .{}),
                         }
 
-                        // Skip over the tokens used in the lookup
                         const skip_count: usize = lookup_path.len;
                         i += skip_count;
                     } else {
                         try writer.print("UNUSED TOKEN ENCOUNTERED: ", .{});
-                        // Just write the first token (we can't resolve it anyway)
                         try writer.print(" {s}", .{tokens[i + 1].literal});
                         i += 1;
                     }
                 }
             },
             .TKN_VALUE => {
-                // Write literal value
                 switch (current_token.value_type) {
                     .int => try writer.print("{d}", .{current_token.value.int}),
                     .float => try writer.print("{d:.2}", .{current_token.value.float}),
@@ -160,7 +149,6 @@ pub fn writeBakedFile(tokens: []ParsedToken, preprocessor: *Preprocessor, alloca
     }
 }
 
-// Writes a file with the final variable state from all scopes
 pub fn writeVariableState(file_path: []const u8, allocator: std.mem.Allocator) !void {
     const base_name = std.fs.path.basename(file_path);
     const output_path = try std.fmt.allocPrint(allocator, "build/{s}", .{base_name});

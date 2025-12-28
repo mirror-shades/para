@@ -10,7 +10,6 @@ pub fn build(b: *std.Build) void {
     });
     b.installArtifact(exe);
 
-    // Add test step
     const test_exe = b.addTest(.{
         .name = "test",
         .root_module = b.createModule(.{
@@ -22,8 +21,6 @@ pub fn build(b: *std.Build) void {
     const run_test = b.addRunArtifact(test_exe);
     const test_step = b.step("test", "Run the tests");
 
-    // Tests spawn `zig-out/bin/para[.exe]`, so ensure it exists first.
-    test_step.dependOn(b.getInstallStep());
     run_test.step.dependOn(&exe.step);
     test_step.dependOn(&run_test.step);
 }

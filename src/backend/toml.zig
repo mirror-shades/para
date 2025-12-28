@@ -5,7 +5,6 @@ pub fn writeProgramToml(
     writer: anytype,
     program: *const ir.Program,
 ) anyerror!void {
-    // Root-level scalars (implicit root table)
     var i: usize = 0;
     while (i < program.globals.items.len) : (i += 1) {
         const binding = program.globals.items[i];
@@ -15,7 +14,6 @@ pub fn writeProgramToml(
         }
     }
 
-    // Tables for object bindings
     var first_table: bool = true;
     i = 0;
     while (i < program.globals.items.len) : (i += 1) {
@@ -53,7 +51,6 @@ fn writeTable(
         first_table.* = false;
     }
 
-    // Table header: [a.b.c]
     try writer.writeByte('[');
     var i: usize = 0;
     while (i < path.len) : (i += 1) {
@@ -62,7 +59,6 @@ fn writeTable(
     }
     try writer.writeAll("]\n");
 
-    // Scalars in this table
     i = 0;
     while (i < obj.fields.items.len) : (i += 1) {
         const field = obj.fields.items[i];
@@ -72,7 +68,6 @@ fn writeTable(
         }
     }
 
-    // Nested tables
     i = 0;
     while (i < obj.fields.items.len) : (i += 1) {
         const field = obj.fields.items[i];
@@ -111,7 +106,7 @@ fn writeScalar(
         .time => |v| try std.fmt.format(writer, "{}", .{v}),
         .string => |s| try writeString(writer, s),
         .null_ => |_| try writer.writeAll("null"),
-        .object => |_| unreachable, // handled at table level
+        .object => |_| return error.UnexpectedObject,
     }
 }
 

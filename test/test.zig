@@ -5,11 +5,8 @@ const process = std.process;
 const fs = std.fs;
 const printf = std.debug.print;
 
-// update this when adding tests
 const TEST_TOTAL = 16;
 
-// Legacy: previously tests attempted to discover `para` via argv. Keep this as
-// a no-op fallback; the build now supplies `PARA_EXE_PATH` instead.
 var para_exe_override: ?[]const u8 = null;
 
 fn print(comptime format: []const u8) void {
@@ -19,20 +16,47 @@ fn print(comptime format: []const u8) void {
 fn getParaExePath(allocator: std.mem.Allocator, project_root: []const u8) ![]u8 {
     const exe_name = if (builtin.os.tag == .windows) "para.exe" else "para";
 
-    const test_exe_rel = try fs.path.join(allocator, &[_][]const u8{ "zig-out", "bin", "test-bin", exe_name });
-    defer allocator.free(test_exe_rel);
-    const test_exe_abs = try fs.path.join(allocator, &[_][]const u8{ project_root, test_exe_rel });
-
-    if (fs.openFileAbsolute(test_exe_abs, .{})) |file| {
-        file.close();
-        return test_exe_abs;
-    } else |_| {
-        allocator.free(test_exe_abs);
-    }
-
     const exe_rel = try fs.path.join(allocator, &[_][]const u8{ "zig-out", "bin", exe_name });
     defer allocator.free(exe_rel);
-    return try fs.path.join(allocator, &[_][]const u8{ project_root, exe_rel });
+    const exe_abs = try fs.path.join(allocator, &[_][]const u8{ project_root, exe_rel });
+    if (fs.openFileAbsolute(exe_abs, .{})) |file| {
+        file.close();
+        return exe_abs;
+    } else |_| {
+        allocator.free(exe_abs);
+    }
+
+    const o_dir_rel = try fs.path.join(allocator, &[_][]const u8{ ".zig-cache", "o" });
+    defer allocator.free(o_dir_rel);
+    const o_dir_abs = try fs.path.join(allocator, &[_][]const u8{ project_root, o_dir_rel });
+    defer allocator.free(o_dir_abs);
+
+    var o_dir = fs.openDirAbsolute(o_dir_abs, .{ .iterate = true }) catch return error.FileNotFound;
+    defer o_dir.close();
+
+    var best_path: ?[]u8 = null;
+    var best_mtime: i128 = -1;
+
+    var it = o_dir.iterate();
+    while (try it.next()) |entry| {
+        if (entry.kind != .directory) continue;
+
+        var sub = o_dir.openDir(entry.name, .{ .iterate = true }) catch continue;
+        defer sub.close();
+
+        const cand = sub.openFile(exe_name, .{}) catch continue;
+        defer cand.close();
+
+        const stat = try cand.stat();
+        const mtime: i128 = @intCast(stat.mtime);
+        if (mtime > best_mtime) {
+            best_mtime = mtime;
+            if (best_path) |p| allocator.free(p);
+            best_path = try fs.path.join(allocator, &[_][]const u8{ o_dir_abs, entry.name, exe_name });
+        }
+    }
+
+    return best_path orelse error.FileNotFound;
 }
 
 fn dirHasFile(dir: fs.Dir, name: []const u8) bool {
@@ -50,14 +74,10 @@ fn dirHasDir(dir: fs.Dir, name: []const u8) bool {
 }
 
 fn findProjectRoot(allocator: std.mem.Allocator) ![]u8 {
-    // Start from current working directory and walk up until we find expected markers
     const cwd_dir = fs.cwd();
     var current = try cwd_dir.realpathAlloc(allocator, ".");
-    // We will mutate current by repeatedly trimming the last path component
     while (true) : ({}) {
-        // Try to open this directory and look for expected files
         var dir = fs.openDirAbsolute(current, .{ .iterate = true }) catch |err| {
-            // If we cannot open, attempt to go up
             if (std.fs.path.dirname(current)) |parent| {
                 allocator.free(current);
                 current = try allocator.dupe(u8, parent);
@@ -72,10 +92,9 @@ fn findProjectRoot(allocator: std.mem.Allocator) ![]u8 {
         const has_src_main = dirHasFile(dir, "src/main.zig");
         const has_test_dir = dirHasDir(dir, "test");
         if (has_build and has_src_main and has_test_dir) {
-            return current; // caller frees
+            return current;
         }
 
-        // Move up a directory; stop if there is no parent
         if (std.fs.path.dirname(current)) |parent| {
             allocator.free(current);
             current = try allocator.dupe(u8, parent);
@@ -91,11 +110,9 @@ fn runParaCommand(allocator: std.mem.Allocator, path: []const u8) ![]const u8 {
     defer arena.deinit();
     const child_allocator = arena.allocator();
 
-    // Discover project root regardless of runner CWD
     const project_root = try findProjectRoot(allocator);
     defer allocator.free(project_root);
 
-    // Verify test file exists and read contents (sanity check)
     var root_dir = try fs.openDirAbsolute(project_root, .{});
     defer root_dir.close();
     const file = root_dir.openFile(path, .{}) catch |err| {
@@ -114,7 +131,6 @@ fn runParaCommand(allocator: std.mem.Allocator, path: []const u8) ![]const u8 {
 
     const exe_path = exe_path_owned orelse return error.FileNotFound;
 
-    // Absolute path to input file for the child
     const input_abs = try fs.path.join(allocator, &[_][]const u8{ project_root, path });
     defer allocator.free(input_abs);
 
@@ -335,18 +351,15 @@ fn parseOutput(output: []const u8, allocator: std.mem.Allocator) !std.ArrayList(
     var outputs: std.ArrayList(Output) = .empty;
     var toParse = output;
     while (toParse.len > 0) {
-        // First get everything after the ]
         const after_bracket = grabBetween(toParse, "]", "\n");
         if (after_bracket.len == 0) break;
 
-        // Now parse the parts
         const name = std.mem.trim(u8, grabBetween(after_bracket, " ", ":"), &std.ascii.whitespace);
         const typ = std.mem.trim(u8, grabBetween(after_bracket, ":", "="), &std.ascii.whitespace);
         const value = std.mem.trim(u8, grabBetween(after_bracket, "=", "\n"), &std.ascii.whitespace);
 
         try outputs.append(allocator, Output{ .name = name, .type = typ, .value = value });
 
-        // Find the next line by looking for the next [
         const next_line = std.mem.indexOf(u8, toParse, "\n[") orelse break;
         toParse = toParse[next_line + 1 ..];
     }
@@ -356,7 +369,6 @@ fn parseOutput(output: []const u8, allocator: std.mem.Allocator) !std.ArrayList(
 fn grabBetween(output: []const u8, start: []const u8, end: []const u8) []const u8 {
     const start_index = std.mem.indexOf(u8, output, start) orelse return "";
     const end_index = std.mem.indexOf(u8, output[start_index + start.len ..], end) orelse {
-        // If no end marker found, return everything after start to end of string
         return output[start_index + start.len ..];
     };
     return output[start_index + start.len .. start_index + start.len + end_index];
@@ -367,7 +379,6 @@ fn expectFloatStringApprox(expected: f64, actual: []const u8) !void {
     try testing.expectApproxEqAbs(expected, parsed, 1e-9);
 }
 
-// Test result tracking
 const TestResult = struct {
     name: []const u8,
     passed: bool,
@@ -403,7 +414,7 @@ const TestRunner = struct {
         self.total_tests += 1;
         const test_start = std.time.milliTimestamp();
 
-        printf("[{d}/{d}] Running: {s}... \t", .{ self.total_tests, TEST_TOTAL, name }); // Update 3 to total when you know it
+        printf("[{d}/{d}] Running: {s}... \t", .{ self.total_tests, TEST_TOTAL, name });
 
         const result = test_fn(self.allocator);
         const duration = @as(u64, @intCast(std.time.milliTimestamp() - test_start));
@@ -448,7 +459,6 @@ const TestRunner = struct {
     }
 };
 
-// Convert to regular functions (no test keyword)
 fn testBasicVariableAssignment(allocator: std.mem.Allocator) !void {
     const output = try runParaCommand(allocator, "./test/build-checks/variable_assign.para");
     defer allocator.free(output);
@@ -605,7 +615,6 @@ fn testJsonGroupings(allocator: std.mem.Allocator) !void {
     const output = try runParaJsonCommand(allocator, "./test/build-checks/groupings.para");
     defer allocator.free(output);
 
-    // JSON is the last line; split on newline and trim.
     var it = std.mem.tokenizeAny(u8, output, "\r\n");
     var last: []const u8 = "";
     while (it.next()) |line| {
@@ -644,8 +653,6 @@ fn testZonGroupings(allocator: std.mem.Allocator) !void {
     const output = try runParaZonCommand(allocator, "./test/build-checks/groupings.para");
     defer allocator.free(output);
 
-    // ZON output is a Zig object literal starting with .{ and
-    // containing person, newPersonAge, age and salary fields.
     try testing.expect(std.mem.indexOf(u8, output, ".{") != null);
     try testing.expect(std.mem.indexOf(u8, output, ".person = .{") != null);
     try testing.expect(std.mem.indexOf(u8, output, ".newPersonAge = 50") != null);
@@ -669,7 +676,6 @@ fn testYamlGroupings(allocator: std.mem.Allocator) !void {
     const output = try runParaYamlCommand(allocator, "./test/build-checks/groupings.para");
     defer allocator.free(output);
 
-    // YAML mapping with top-level newPersonAge and nested person.age and person.job.salary.
     try testing.expect(std.mem.indexOf(u8, output, "newPersonAge: 50") != null);
     try testing.expect(std.mem.indexOf(u8, output, "person:") != null);
     try testing.expect(std.mem.indexOf(u8, output, "age: 50") != null);
@@ -691,7 +697,6 @@ fn testTomlGroupings(allocator: std.mem.Allocator) !void {
     const output = try runParaTomlCommand(allocator, "./test/build-checks/groupings.para");
     defer allocator.free(output);
 
-    // TOML root scalar and nested tables.
     try testing.expect(std.mem.indexOf(u8, output, "newPersonAge = 50") != null);
     try testing.expect(std.mem.indexOf(u8, output, "[person]") != null);
     try testing.expect(std.mem.indexOf(u8, output, "age = 50") != null);
@@ -714,7 +719,6 @@ fn testRonGroupings(allocator: std.mem.Allocator) !void {
     const output = try runParaRonCommand(allocator, "./test/build-checks/groupings.para");
     defer allocator.free(output);
 
-    // RON tuple-like root with nested person object.
     try testing.expect(std.mem.indexOf(u8, output, "(") != null);
     try testing.expect(std.mem.indexOf(u8, output, "newPersonAge: 50") != null);
     try testing.expect(std.mem.indexOf(u8, output, "person: (") != null);
@@ -733,19 +737,14 @@ fn testRonBigFile(allocator: std.mem.Allocator) !void {
     try testing.expect(std.mem.indexOf(u8, output, "title: \"Painter\"") != null);
 }
 
-// Single test function that Zig will run
 test "para language tests" {
-    // Set UTF-8 console output on Windows
     if (builtin.os.tag == .windows) {
-        _ = std.os.windows.kernel32.SetConsoleOutputCP(65001); // UTF-8
+        _ = std.os.windows.kernel32.SetConsoleOutputCP(65001);
     }
 
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
-
-    // Prefer `PARA_EXE_PATH` (if set). Avoid inferring from argv because Zig's
-    // test runner passes its own flags there.
 
     print("\n🚀 Starting Para Language Test Suite\n");
     print("=" ** 50 ++ "\n");
@@ -753,7 +752,6 @@ test "para language tests" {
     var runner = TestRunner.init(allocator);
     defer runner.deinit();
 
-    // Run tests in whatever order/loop you want
     runner.runTest("Variable Assignment", testBasicVariableAssignment);
     runner.runTest("Group Assignments", testGroupAssignments);
     runner.runTest("Big File Processing", testBigFile);
@@ -771,10 +769,8 @@ test "para language tests" {
     runner.runTest("RON Grouping Test", testRonGroupings);
     runner.runTest("RON Big File Test", testRonBigFile);
 
-    // Generate the report
     runner.generateReport();
 
-    // Fail the overall test if any individual test failed
     if (runner.passed_tests != runner.total_tests) {
         return error.TestsFailed;
     }

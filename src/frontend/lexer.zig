@@ -13,7 +13,6 @@ pub const Lexer = struct {
     tokens: std.ArrayList(token.Token),
     lines: std.ArrayList([]const u8),
     allocator: std.mem.Allocator,
-    // lets us know what side of the = sign we are ons
     assignment_mode: bool,
 
     pub fn init(allocator: std.mem.Allocator, input: []const u8) !Lexer {
@@ -43,21 +42,13 @@ pub const Lexer = struct {
         while (i < self.input.len) : (i += 1) {
             const c = self.input[i];
             if (c == '\n' or c == '\r') {
-                // Capture the line content up to (but excluding) the
-                // line-ending character(s).
                 try self.lines.append(self.allocator, self.input[start..i]);
-
-                // Treat CRLF as a single logical newline by consuming the
-                // trailing '\n' here, so the next line starts after it.
                 if (c == '\r' and i + 1 < self.input.len and self.input[i + 1] == '\n') {
                     i += 1;
                 }
                 start = i + 1;
             }
         }
-        // Always add the trailing line segment (possibly empty when the
-        // source ends with a newline) so that `self.line` (1-based) never
-        // exceeds `self.lines.len` during error reporting.
         if (start <= self.input.len) {
             try self.lines.append(self.allocator, self.input[start..self.input.len]);
         }
@@ -115,12 +106,10 @@ pub const Lexer = struct {
 
     fn handleNewline(self: *Lexer) !void {
         self.assignment_mode = false;
-        // if there are no tokens, don't add a newline
         if (self.tokens.items.len == 0) {
             return;
         }
 
-        //check the last token to see if it is a newline
         const last_token = self.tokens.items[self.tokens.items.len - 1];
         if (last_token.token_type == .TKN_NEWLINE) {
             return;
@@ -139,8 +128,6 @@ pub const Lexer = struct {
 
     pub fn tokenize(self: *Lexer) !void {
         while (self.peek()) |c| {
-
-            // Handle line endings and comments
             if (c == '\r') {
                 try self.handleNewline();
                 self.advance();
@@ -157,7 +144,6 @@ pub const Lexer = struct {
                 continue;
             }
 
-            // Skip whitespace between tokens
             if (c == ' ' or c == '\t') {
                 self.skipWhitespace();
                 continue;
@@ -183,7 +169,6 @@ pub const Lexer = struct {
                 if (self.peek() == '*') {
                     self.skipMultiline();
                 } else if (self.peek() == '/') {
-                    // Consume the second slash so we start skipping after `//`.
                     self.advance();
                     self.skipLine();
                 } else {
@@ -200,8 +185,6 @@ pub const Lexer = struct {
                 continue;
             }
 
-            // Fast-path handling for common leading letters used by
-            // type/value keywords and the `temp` declaration modifier.
             if (c == 'i' or c == 's' or c == 'b' or c == 'f' or c == 't' or c == 'T' or c == 'F' or c == 'I' or c == 'S' or c == 'B') {
                 const current_column = self.column;
                 const word = try self.readWord();
@@ -243,8 +226,6 @@ pub const Lexer = struct {
                         .token_number = current_column,
                     });
                 } else if (is_temp_keyword) {
-                    // Ensure `temp` is tokenized as a dedicated TEMP token so
-                    // the parser can mark following declarations as temporary.
                     try self.tokens.append(self.allocator, .{
                         .literal = word,
                         .token_type = .TKN_TEMP,
@@ -276,7 +257,6 @@ pub const Lexer = struct {
                 continue;
             }
 
-            // Process actual tokens
             switch (c) {
                 ':' => {
                     const current_column = self.column;
@@ -316,10 +296,6 @@ pub const Lexer = struct {
                     self.advance();
                 },
                 '.' => {
-                    // Dot is used as a path separator for group/field access.
-                    // Numeric literals with a decimal point are handled entirely
-                    // inside readNumber(), so this branch only runs when the dot
-                    // stands alone as a token.
                     const current_column = self.column;
                     try self.tokens.append(self.allocator, .{
                         .literal = ".",
@@ -493,7 +469,6 @@ pub const Lexer = struct {
             }
         }
 
-        // Add final EOF token
         try self.tokens.append(self.allocator, .{
             .literal = "EOF",
             .token_type = .TKN_EOF,
@@ -577,7 +552,7 @@ pub const Lexer = struct {
     fn readString(self: *Lexer) !void {
         const start = self.pos;
         const current_column = self.column;
-        self.advance(); // skip opening quote
+        self.advance();
         while (self.peek()) |c| {
             if (c == '"') {
                 self.advance();
@@ -591,7 +566,6 @@ pub const Lexer = struct {
             }
         }
 
-        // Check if we hit EOF before finding closing quote
         if (self.peek() == null) {
             const line_content = self.lines.items[self.line - 1];
             const column = current_column - 1;
@@ -626,7 +600,6 @@ pub const Lexer = struct {
                     }
                     has_dot = true;
                     self.advance();
-                    // Ensure there's at least one digit after the decimal point
                     if (self.peek()) |next| {
                         if (next < '0' or next > '9') {
                             is_valid = false;

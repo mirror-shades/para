@@ -57,7 +57,7 @@ fn writeScalar(
         .time => |v| try std.fmt.format(writer, "{}", .{v}),
         .string => |s| try writeString(writer, s),
         .null_ => |_| try writer.writeAll("null"),
-        .object => |_| unreachable, // handled at binding level
+        .object => |_| return error.UnexpectedObject,
     }
 }
 
@@ -74,4 +74,3 @@ fn writeIndent(writer: anytype, count: usize) anyerror!void {
         try writer.writeAll("  ");
     }
 }
-

@@ -56,7 +56,6 @@ pub const Parser = struct {
     }
 
     pub fn deinit(self: *Parser) void {
-        // Clean up any allocated memory in parsed tokens
         for (self.parsed_tokens.items) |*token| {
             token.deinit(self.allocator);
         }
@@ -81,9 +80,8 @@ pub const Parser = struct {
             current_index += 1;
 
             switch (current_token.token_type) {
+                .TKN_EOF => break,
                 .TKN_VAR => {
-                    // After seeing `var`, the next token on this line must be
-                    // an identifier.
                     if (!TokenKind.compare(self.tokens[current_index].token_type, .TKN_IDENTIFIER)) {
                         Reporting.throwError(
                             "VAR must be followed by an identifier (line {d}, token {d})\n",
@@ -95,8 +93,6 @@ pub const Parser = struct {
                     self.has_decl_prefix = true;
                 },
                 .TKN_CONST => {
-                    // After seeing `const`, the next token on this line must be
-                    // an identifier.
                     if (!TokenKind.compare(self.tokens[current_index].token_type, .TKN_IDENTIFIER)) {
                         Reporting.throwError(
                             "CONST must be followed by an identifier (line {d}, token {d})\n",
@@ -108,8 +104,6 @@ pub const Parser = struct {
                     self.has_decl_prefix = true;
                 },
                 .TKN_TEMP => {
-                    // `temp` may prefix a declaration; it must be followed by
-                    // either an identifier, `var`, or `const` on the same line.
                     if (!TokenKind.compare(self.tokens[current_index].token_type, .TKN_VAR) and
                         !TokenKind.compare(self.tokens[current_index].token_type, .TKN_CONST))
                     {
@@ -123,8 +117,6 @@ pub const Parser = struct {
                     self.has_decl_prefix = true;
                 },
                 .TKN_IDENTIFIER => {
-                    // If this is the first significant token on a new line and we are inside group blocks,
-                    // prefix the line with the current group path so downstream processing can infer scope correctly.
                     if (!line_prefixed_with_groups and self.groups.items.len > 0) {
                         for (self.groups.items) |g| {
                             try self.parsed_tokens.append(self.allocator, ParsedToken{
@@ -149,7 +141,6 @@ pub const Parser = struct {
                         } else if (self.tokens[current_index + 1].token_type == .TKN_TYPE_ASSIGN) {
                             continue;
                         }
-                        // Add group token to represent the path, but do NOT push to groups stack since there's no brace-opened scope
                         if (self.parsed_tokens.items.len == 0 or
                             self.parsed_tokens.items[self.parsed_tokens.items.len - 1].token_type != .TKN_GROUP or
                             !std.mem.eql(u8, self.parsed_tokens.items[self.parsed_tokens.items.len - 1].literal, current_token.literal))
@@ -209,7 +200,6 @@ pub const Parser = struct {
                     }
                 },
                 .TKN_LOOKUP => {
-                    // Prefix line with current group path if needed
                     if (!line_prefixed_with_groups and self.groups.items.len > 0) {
                         for (self.groups.items) |g| {
                             try self.parsed_tokens.append(self.allocator, ParsedToken{
@@ -293,13 +283,9 @@ pub const Parser = struct {
                     continue;
                 },
                 .TKN_LBRACE => {
-                    // Enter a new group scope. We support two patterns:
-                    //   name { ... }
-                    //   name :: Type { ... }
                     var type_to_add: ?[]const u8 = null;
                     var name_index: ?usize = null;
 
-                    // Typed group: <identifier> :: <type> {
                     if (current_index >= 4 and
                         self.tokens[current_index - 3].token_type == .TKN_TYPE_ASSIGN and
                         self.tokens[current_index - 2].token_type == .TKN_TYPE and
@@ -307,9 +293,7 @@ pub const Parser = struct {
                     {
                         type_to_add = self.tokens[current_index - 2].literal;
                         name_index = current_index - 4;
-                    }
-                    // Untyped group: <identifier> {
-                    else if (current_index >= 2 and
+                    } else if (current_index >= 2 and
                         self.tokens[current_index - 2].token_type == .TKN_IDENTIFIER)
                     {
                         name_index = current_index - 2;
@@ -351,13 +335,11 @@ pub const Parser = struct {
                             .has_decl_prefix = false,
                         });
 
-                        // Clone the tokens to ensure they remain valid
                         var expression_tokens = try self.allocator.alloc(Token, assign_line.items.len);
                         for (assign_line.items, 0..) |token, i| {
                             expression_tokens[i] = token;
                         }
 
-                        // Only add expression tokens if there are actually tokens to process
                         if (expression_tokens.len > 0) {
                             try self.parsed_tokens.append(self.allocator, ParsedToken{
                                 .token_type = .TKN_EXPRESSION,
@@ -372,7 +354,6 @@ pub const Parser = struct {
                                 .has_decl_prefix = false,
                             });
                         } else {
-                            // If no expression tokens, don't add an expression token and free the allocated memory
                             self.allocator.free(expression_tokens);
                             printError("Warning: Empty expression detected\n", .{});
                             return error.EmptyExpression;
@@ -394,11 +375,6 @@ pub const Parser = struct {
                     continue;
                 },
                 .TKN_TYPE_ASSIGN => {
-                    // Enforce that explicit type annotations (`::`) on value
-                    // declarations are only used when the line is prefixed
-                    // with `var` or `const`. Typed group scopes
-                    // (`name :: Type { ... }`) are exempt from this rule.
-
                     var is_typed_group = false;
                     const idx = current_index;
                     if (idx >= 3 and idx < self.tokens.len) {
@@ -425,13 +401,11 @@ pub const Parser = struct {
                         return error.TypeAnnotationMissingVarOrConst;
                     }
 
-                    // We never emit a token for `::` itself.
                     continue;
                 },
                 .TKN_NEWLINE => {
                     has_equals = false;
                     line_prefixed_with_groups = false;
-                    // Reset declaration context at end of line.
                     self.is_mutable = false;
                     self.is_temporary = false;
                     self.has_decl_prefix = false;
@@ -450,9 +424,6 @@ pub const Parser = struct {
                     continue;
                 },
                 .TKN_TYPE => {
-                    // Standalone type tokens (e.g. in variable declarations) are
-                    // forwarded; group-level types are handled when entering the
-                    // corresponding `{` block.
                     try self.parsed_tokens.append(self.allocator, ParsedToken{
                         .token_type = .TKN_TYPE,
                         .literal = current_token.literal,
@@ -468,7 +439,6 @@ pub const Parser = struct {
                     continue;
                 },
                 .TKN_VALUE => {
-                    // Parse the value from the literal based on the token's value type
                     const parsed_value = parseValueFromLiteral(current_token.literal, current_token.value_type);
                     try self.parsed_tokens.append(self.allocator, ParsedToken{
                         .token_type = .TKN_VALUE,
@@ -592,8 +562,15 @@ pub const Parser = struct {
                     });
                     continue;
                 },
+                .TKN_EXCLAIM => continue,
+                .TKN_LPAREN => continue,
+                .TKN_RPAREN => continue,
                 else => {
-                    // Unhandled tokens are ignored for now
+                    Reporting.throwError(
+                        "Unhandled token {s} ('{s}') (line {d}, token {d})\n",
+                        .{ @tagName(current_token.token_type), current_token.literal, current_token.line_number, current_token.token_number },
+                    );
+                    return error.UnhandledToken;
                 },
             }
         }
@@ -650,7 +627,6 @@ fn grabLine(self: *Parser, current_token: Token) !std.ArrayList(Token) {
                     break;
                 }
 
-                // Add implicit multiplication for juxtaposition of value and parentheses
                 if (last_token_type != null) {
                     const is_value = last_token_type.? == .TKN_VALUE;
                     const is_rparen = last_token_type.? == .TKN_RPAREN;

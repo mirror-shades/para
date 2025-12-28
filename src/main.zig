@@ -33,19 +33,18 @@ pub fn main() !void {
     var output_yaml = false;
     var output_toml = false;
     var output_ron = false;
-    // Use a fixed buffer allocator to reduce heap allocations and improve performance
-    // for typical input sizes. Increase the buffer if you expect very large files.
-    var arena_buffer: [1024 * 1024]u8 = undefined;
-    var fba = std.heap.FixedBufferAllocator.init(&arena_buffer);
-    const allocator = fba.allocator();
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+
+    var arena = std.heap.ArenaAllocator.init(gpa.allocator());
+    defer arena.deinit();
+    const allocator = arena.allocator();
 
     var args = try std.process.argsWithAllocator(allocator);
     defer args.deinit();
 
-    // Get the program name first before skipping
     const program_name = args.next() orelse "para";
 
-    // Process arguments
     var filename: ?[]const u8 = null;
 
     while (args.next()) |arg| {
@@ -79,7 +78,6 @@ pub fn main() !void {
 
     var reporter = Reporting.Reporter.init(debug_lexer, debug_parser, debug_preprocessor);
 
-    // Check if filename was provided
     const file_path = filename orelse {
         printUsage(program_name);
         return;
@@ -93,10 +91,9 @@ pub fn main() !void {
     const file = try std.fs.cwd().openFile(file_path, .{});
     defer file.close();
 
-    const contents = try file.readToEndAlloc(allocator, 1024 * 1024);
-    defer allocator.free(contents);
+    const max_input_bytes: usize = 64 * 1024 * 1024;
+    const contents = try file.readToEndAlloc(allocator, max_input_bytes);
 
-    // if build folder doesn't exist, create it
     const build_dir = "build";
     std.fs.cwd().access(build_dir, .{}) catch {
         std.fs.cwd().makeDir(build_dir) catch |e| {
@@ -138,7 +135,6 @@ pub fn main() !void {
     var preprocessor = Preprocessor.init(allocator);
     defer preprocessor.deinit();
 
-    // Provide source lines to the preprocessor for better diagnostics
     preprocessor.setSourceLines(para_lexer.lines.items);
 
     if (debug_preprocessor) {
@@ -149,7 +145,7 @@ pub fn main() !void {
     try preprocessor.process(para_parser.parsed_tokens.items);
 
     if (output_json or output_zon or output_yaml or output_toml or output_ron) {
-        var ir_program = preprocessor.buildIrProgram();
+        var ir_program = try preprocessor.buildIrProgram();
         defer ir_program.deinit(allocator);
 
         var stdout_file = std.fs.File.stdout().deprecatedWriter();
@@ -170,7 +166,6 @@ pub fn main() !void {
     } else {
         try Writer.writeFlatFile(para_parser.parsed_tokens.items);
 
-        // Create a file with the final variable state
         try Writer.writeVariableState("output.w.para", allocator);
 
         if (debug_preprocessor) {
@@ -180,12 +175,10 @@ pub fn main() !void {
 }
 
 fn printNode(node: *ast.Node, indent: usize, reporter: *Reporting.Reporter) !void {
-    // Print indentation
     for (0..indent) |_| {
         reporter.logDebug("  ", .{});
     }
 
-    // Print node info
     reporter.logDebug("{s}: {s}", .{ @tagName(node.type), node.name });
     if (node.is_const) {
         reporter.logDebug(" (const)", .{});
@@ -201,7 +194,6 @@ fn printNode(node: *ast.Node, indent: usize, reporter: *Reporting.Reporter) !voi
     }
     reporter.logDebug("\n", .{});
 
-    // Print children with increased indentation
     if (node.children) |children| {
         for (children.items) |child| {
             try printNode(child, indent + 1, reporter);
@@ -221,5 +213,5 @@ fn printUsage(program_name: []const u8) void {
     Reporting.log("  --yaml               Emit YAML (experimental)\n", .{});
     Reporting.log("  --toml               Emit TOML (experimental)\n", .{});
     Reporting.log("  --ron                Emit RON (experimental)\n", .{});
-    std.process.exit(0); // Exit cleanly after printing all help text
+    std.process.exit(0);
 }

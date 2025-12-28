@@ -30,8 +30,6 @@ pub const Reporter = struct {
     pub fn logDebug(self: *Reporter, from: DebugSource, comptime format: []const u8, args: anytype) void {
         switch (from) {
             .main => {
-                // Treat `.main` messages as part of debug output; show them when
-                // any debug mode is enabled.
                 if (!(self.debug_lexer or self.debug_parser or self.debug_preprocessor)) {
                     return;
                 }
@@ -72,7 +70,6 @@ pub fn log(comptime format: []const u8, args: anytype) void {
     logOutWithPrefix("", format, args);
 }
 
-// internal functions
 fn write(
     writer: anytype,
     comptime prefix: []const u8,

@@ -5,8 +5,6 @@ pub fn writeProgramZon(
     writer: anytype,
     program: *const ir.Program,
 ) anyerror!void {
-    // Top-level value is a Zig object notation literal:
-    // .{ .field = value, ... }
     try writer.writeAll(".{\n");
 
     var i: usize = 0;
