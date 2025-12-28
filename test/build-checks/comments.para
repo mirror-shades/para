@@ -1,0 +1,5 @@
+const a: int = 1 // end-of-line comment must not swallow newline
+a?
+const b: int = 2
+b?
+

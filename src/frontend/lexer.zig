@@ -104,23 +104,19 @@ pub const Lexer = struct {
             }
             self.advance();
         }
-        self.advance();
     }
 
     fn skipLine(self: *Lexer) void {
         while (self.peek()) |c| {
-            if (c == '\n') {
-                self.advance();
-                break;
-            }
+            if (c == '\n' or c == '\r') break;
             self.advance();
         }
     }
 
     fn handleNewline(self: *Lexer) !void {
+        self.assignment_mode = false;
         // if there are no tokens, don't add a newline
         if (self.tokens.items.len == 0) {
-            self.advance();
             return;
         }
 
@@ -139,7 +135,6 @@ pub const Lexer = struct {
             .token_number = current_column,
         });
         self.token_count += 1;
-        self.assignment_mode = false;
     }
 
     pub fn tokenize(self: *Lexer) !void {
@@ -188,6 +183,8 @@ pub const Lexer = struct {
                 if (self.peek() == '*') {
                     self.skipMultiline();
                 } else if (self.peek() == '/') {
+                    // Consume the second slash so we start skipping after `//`.
+                    self.advance();
                     self.skipLine();
                 } else {
                     try self.tokens.append(self.allocator, .{

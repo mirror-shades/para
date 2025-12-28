@@ -21,5 +21,8 @@ pub fn build(b: *std.Build) void {
 
     const run_test = b.addRunArtifact(test_exe);
     const test_step = b.step("test", "Run the tests");
+    // Tests spawn the built `para` binary from `zig-out/bin`, so ensure the
+    // install step runs first to produce that artifact.
+    test_step.dependOn(b.getInstallStep());
     test_step.dependOn(&run_test.step);
 }

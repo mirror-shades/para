@@ -6,7 +6,7 @@ const fs = std.fs;
 const printf = std.debug.print;
 
 // update this when adding tests
-const TEST_TOTAL = 14;
+const TEST_TOTAL = 15;
 
 fn print(comptime format: []const u8) void {
     printf(format, .{});
@@ -553,6 +553,22 @@ fn testSugar(allocator: std.mem.Allocator) !void {
     try testing.expectEqualStrings("\"Bartender\"", outputs.items[6].value);
 }
 
+fn testLineCommentsPreserveNewlines(allocator: std.mem.Allocator) !void {
+    const output = try runParaCommand(allocator, "./test/build-checks/comments.para");
+    defer allocator.free(output);
+
+    var outputs = try parseOutput(output, allocator);
+    defer outputs.deinit(allocator);
+
+    try testing.expectEqualStrings("a", outputs.items[0].name);
+    try testing.expectEqualStrings("int", outputs.items[0].type);
+    try testing.expectEqualStrings("1", outputs.items[0].value);
+
+    try testing.expectEqualStrings("b", outputs.items[1].name);
+    try testing.expectEqualStrings("int", outputs.items[1].type);
+    try testing.expectEqualStrings("2", outputs.items[1].value);
+}
+
 fn testJsonGroupings(allocator: std.mem.Allocator) !void {
     const output = try runParaJsonCommand(allocator, "./test/build-checks/groupings.para");
     defer allocator.free(output);
@@ -707,6 +723,7 @@ test "para language tests" {
     runner.runTest("Group Assignments", testGroupAssignments);
     runner.runTest("Big File Processing", testBigFile);
     runner.runTest("Sugar Syntax Test", testSugar);
+    runner.runTest("Comment Newlines", testLineCommentsPreserveNewlines);
     runner.runTest("JSON Grouping Test", testJsonGroupings);
     runner.runTest("JSON Big File Test", testJsonBigFile);
     runner.runTest("ZON Grouping Test", testZonGroupings);

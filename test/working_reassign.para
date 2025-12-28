@@ -1,6 +1,0 @@
-var person.working: bool = false
-
-person {
-    working = !working
-}
-
