@@ -5,7 +5,9 @@
 
 # Para Language Documentation
 
-Para is a minimalist data representation language designed for clear, typed data structures. It prioritizes simplicity, compile-time error detection, and explicitness, making it ideal for configuration files, data serialization, and simple data modeling. Para maps directly to Zig types for efficient integration.
+Para is a minimalist data representation language designed for clear, typed data structures. It allows you to write your config in a more programmatic style, then convert it to the serialization language of your choice. Current output formats are: JSON, YAML, TOML, ZON, RON.
+
+NOTE: This project is still in early development and should not be relied on in production databases.
 
 ## Design Principles
 
