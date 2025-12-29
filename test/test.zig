@@ -857,14 +857,61 @@ fn testLogicalExpressions(allocator: std.mem.Allocator) !void {
     try testing.expectEqualStrings("bool", outputs.items[15].type);
     try testing.expectEqualStrings("FALSE", outputs.items[15].value);
 
-    // Mixed type comparisons
-    try testing.expectEqualStrings("mixed_int", outputs.items[16].name);
+    // Logical AND operations
+    try testing.expectEqualStrings("and_true_true", outputs.items[16].name);
     try testing.expectEqualStrings("bool", outputs.items[16].type);
-    try testing.expectEqualStrings("FALSE", outputs.items[16].value);
+    try testing.expectEqualStrings("TRUE", outputs.items[16].value);
 
-    try testing.expectEqualStrings("mixed_float", outputs.items[17].name);
+    try testing.expectEqualStrings("and_true_false", outputs.items[17].name);
     try testing.expectEqualStrings("bool", outputs.items[17].type);
     try testing.expectEqualStrings("FALSE", outputs.items[17].value);
+
+    try testing.expectEqualStrings("and_false_true", outputs.items[18].name);
+    try testing.expectEqualStrings("bool", outputs.items[18].type);
+    try testing.expectEqualStrings("FALSE", outputs.items[18].value);
+
+    try testing.expectEqualStrings("and_false_false", outputs.items[19].name);
+    try testing.expectEqualStrings("bool", outputs.items[19].type);
+    try testing.expectEqualStrings("FALSE", outputs.items[19].value);
+
+    // Logical OR operations
+    try testing.expectEqualStrings("or_true_true", outputs.items[20].name);
+    try testing.expectEqualStrings("bool", outputs.items[20].type);
+    try testing.expectEqualStrings("TRUE", outputs.items[20].value);
+
+    try testing.expectEqualStrings("or_true_false", outputs.items[21].name);
+    try testing.expectEqualStrings("bool", outputs.items[21].type);
+    try testing.expectEqualStrings("TRUE", outputs.items[21].value);
+
+    try testing.expectEqualStrings("or_false_true", outputs.items[22].name);
+    try testing.expectEqualStrings("bool", outputs.items[22].type);
+    try testing.expectEqualStrings("TRUE", outputs.items[22].value);
+
+    try testing.expectEqualStrings("or_false_false", outputs.items[23].name);
+    try testing.expectEqualStrings("bool", outputs.items[23].type);
+    try testing.expectEqualStrings("FALSE", outputs.items[23].value);
+
+    // Complex logical expressions
+    try testing.expectEqualStrings("complex_and", outputs.items[24].name);
+    try testing.expectEqualStrings("bool", outputs.items[24].type);
+    try testing.expectEqualStrings("TRUE", outputs.items[24].value);
+
+    try testing.expectEqualStrings("complex_or", outputs.items[25].name);
+    try testing.expectEqualStrings("bool", outputs.items[25].type);
+    try testing.expectEqualStrings("TRUE", outputs.items[25].value);
+
+    try testing.expectEqualStrings("chained_logic", outputs.items[26].name);
+    try testing.expectEqualStrings("bool", outputs.items[26].type);
+    try testing.expectEqualStrings("TRUE", outputs.items[26].value);
+
+    // Mixed type comparisons
+    try testing.expectEqualStrings("mixed_int", outputs.items[27].name);
+    try testing.expectEqualStrings("bool", outputs.items[27].type);
+    try testing.expectEqualStrings("FALSE", outputs.items[27].value);
+
+    try testing.expectEqualStrings("mixed_float", outputs.items[28].name);
+    try testing.expectEqualStrings("bool", outputs.items[28].type);
+    try testing.expectEqualStrings("FALSE", outputs.items[28].value);
 }
 
 fn testUnterminatedMultilineCommentFails(allocator: std.mem.Allocator) !void {

@@ -701,6 +701,8 @@ fn isExpressionToken(token: Token) bool {
         token.token_type == .TKN_LTE or
         token.token_type == .TKN_EQ or
         token.token_type == .TKN_NEQ or
+        token.token_type == .TKN_AND or
+        token.token_type == .TKN_OR or
         token.token_type == .TKN_LPAREN or
         token.token_type == .TKN_RPAREN;
 }

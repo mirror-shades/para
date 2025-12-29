@@ -33,6 +33,23 @@ const bool_neq = flag1 != flag2
 const not_true = !flag2
 const not_false = !flag1
 
+# Logical AND operations
+const and_true_true = flag1 and flag1
+const and_true_false = flag1 and flag2
+const and_false_true = flag2 and flag1
+const and_false_false = flag2 and flag2
+
+# Logical OR operations
+const or_true_true = flag1 or flag1
+const or_true_false = flag1 or flag2
+const or_false_true = flag2 or flag1
+const or_false_false = flag2 or flag2
+
+# Complex logical expressions
+const complex_and = (x < y) and (flag1 == true)
+const complex_or = (x > y) or (flag2 == false)
+const chained_logic = flag1 and flag2 or flag1
+
 # Mixed type comparisons (should work for same types)
 const mixed_int = x == y
 const mixed_float = z == w
@@ -53,5 +70,23 @@ bool_eq?
 bool_neq?
 not_true?
 not_false?
+
+# Test logical AND results
+and_true_true?
+and_true_false?
+and_false_true?
+and_false_false?
+
+# Test logical OR results
+or_true_true?
+or_true_false?
+or_false_true?
+or_false_false?
+
+# Test complex logical expressions
+complex_and?
+complex_or?
+chained_logic?
+
 mixed_int?
 mixed_float?
