@@ -478,7 +478,7 @@ const TestRunner = struct {
 };
 
 fn testBasicVariableAssignment(allocator: std.mem.Allocator) !void {
-    const output = try runParaCommand(allocator, "./test/build-checks/variable_assign.para");
+    const output = try runParaCommand(allocator, "./test/suite/variable_assign.para");
     defer allocator.free(output);
 
     var outputs = try parseOutput(output, allocator);
@@ -506,7 +506,7 @@ fn testBasicVariableAssignment(allocator: std.mem.Allocator) !void {
 }
 
 fn testGroupAssignments(allocator: std.mem.Allocator) !void {
-    const output = try runParaCommand(allocator, "./test/build-checks/groupings.para");
+    const output = try runParaCommand(allocator, "./test/suite/groupings.para");
     defer allocator.free(output);
 
     var outputs = try parseOutput(output, allocator);
@@ -526,7 +526,7 @@ fn testGroupAssignments(allocator: std.mem.Allocator) !void {
 }
 
 fn testBigFile(allocator: std.mem.Allocator) !void {
-    const output = try runParaCommand(allocator, "./test/build-checks/big_file.para");
+    const output = try runParaCommand(allocator, "./test/suite/big_file.para");
     defer allocator.free(output);
 
     var outputs = try parseOutput(output, allocator);
@@ -562,7 +562,7 @@ fn testBigFile(allocator: std.mem.Allocator) !void {
 }
 
 fn testSugar(allocator: std.mem.Allocator) !void {
-    const output = try runParaCommand(allocator, "./test/build-checks/sugar.para");
+    const output = try runParaCommand(allocator, "./test/suite/sugar.para");
     defer allocator.free(output);
 
     var outputs = try parseOutput(output, allocator);
@@ -598,7 +598,7 @@ fn testSugar(allocator: std.mem.Allocator) !void {
 }
 
 fn testLineCommentsPreserveNewlines(allocator: std.mem.Allocator) !void {
-    const output = try runParaCommand(allocator, "./test/build-checks/comments.para");
+    const output = try runParaCommand(allocator, "./test/suite/comments.para");
     defer allocator.free(output);
 
     var outputs = try parseOutput(output, allocator);
@@ -614,7 +614,7 @@ fn testLineCommentsPreserveNewlines(allocator: std.mem.Allocator) !void {
 }
 
 fn testTimeType(allocator: std.mem.Allocator) !void {
-    const output = try runParaCommand(allocator, "./test/build-checks/time.para");
+    const output = try runParaCommand(allocator, "./test/suite/time.para");
     defer allocator.free(output);
 
     var outputs = try parseOutput(output, allocator);
@@ -630,21 +630,21 @@ fn testTimeType(allocator: std.mem.Allocator) !void {
 }
 
 fn testTimeTypeInvalid(allocator: std.mem.Allocator) !void {
-    const err_month = try runParaCommandExpectFailure(allocator, "./test/build-checks/time_invalid_month.para");
+    const err_month = try runParaCommandExpectFailure(allocator, "./test/suite/time_invalid_month.para");
     defer allocator.free(err_month);
     try testing.expect(std.mem.indexOf(u8, err_month, "Invalid time literal") != null);
 
-    const err_day = try runParaCommandExpectFailure(allocator, "./test/build-checks/time_invalid_day.para");
+    const err_day = try runParaCommandExpectFailure(allocator, "./test/suite/time_invalid_day.para");
     defer allocator.free(err_day);
     try testing.expect(std.mem.indexOf(u8, err_day, "Invalid time literal") != null);
 
-    const err_tz = try runParaCommandExpectFailure(allocator, "./test/build-checks/time_invalid_tz.para");
+    const err_tz = try runParaCommandExpectFailure(allocator, "./test/suite/time_invalid_tz.para");
     defer allocator.free(err_tz);
     try testing.expect(std.mem.indexOf(u8, err_tz, "Invalid time literal") != null);
 }
 
 fn testJsonGroupings(allocator: std.mem.Allocator) !void {
-    const output = try runParaJsonCommand(allocator, "./test/build-checks/groupings.para");
+    const output = try runParaJsonCommand(allocator, "./test/suite/groupings.para");
     defer allocator.free(output);
 
     var it = std.mem.tokenizeAny(u8, output, "\r\n");
@@ -662,7 +662,7 @@ fn testJsonGroupings(allocator: std.mem.Allocator) !void {
 }
 
 fn testJsonBigFile(allocator: std.mem.Allocator) !void {
-    const output = try runParaJsonCommand(allocator, "./test/build-checks/big_file.para");
+    const output = try runParaJsonCommand(allocator, "./test/suite/big_file.para");
     defer allocator.free(output);
 
     var it = std.mem.tokenizeAny(u8, output, "\r\n");
@@ -682,7 +682,7 @@ fn testJsonBigFile(allocator: std.mem.Allocator) !void {
 }
 
 fn testZonGroupings(allocator: std.mem.Allocator) !void {
-    const output = try runParaZonCommand(allocator, "./test/build-checks/groupings.para");
+    const output = try runParaZonCommand(allocator, "./test/suite/groupings.para");
     defer allocator.free(output);
 
     try testing.expect(std.mem.indexOf(u8, output, ".{") != null);
@@ -693,7 +693,7 @@ fn testZonGroupings(allocator: std.mem.Allocator) !void {
 }
 
 fn testZonBigFile(allocator: std.mem.Allocator) !void {
-    const output = try runParaZonCommand(allocator, "./test/build-checks/big_file.para");
+    const output = try runParaZonCommand(allocator, "./test/suite/big_file.para");
     defer allocator.free(output);
 
     try testing.expect(std.mem.indexOf(u8, output, ".{") != null);
@@ -705,7 +705,7 @@ fn testZonBigFile(allocator: std.mem.Allocator) !void {
 }
 
 fn testYamlGroupings(allocator: std.mem.Allocator) !void {
-    const output = try runParaYamlCommand(allocator, "./test/build-checks/groupings.para");
+    const output = try runParaYamlCommand(allocator, "./test/suite/groupings.para");
     defer allocator.free(output);
 
     try testing.expect(std.mem.indexOf(u8, output, "newPersonAge: 50") != null);
@@ -715,7 +715,7 @@ fn testYamlGroupings(allocator: std.mem.Allocator) !void {
 }
 
 fn testYamlBigFile(allocator: std.mem.Allocator) !void {
-    const output = try runParaYamlCommand(allocator, "./test/build-checks/big_file.para");
+    const output = try runParaYamlCommand(allocator, "./test/suite/big_file.para");
     defer allocator.free(output);
 
     try testing.expect(std.mem.indexOf(u8, output, "person:") != null);
@@ -726,7 +726,7 @@ fn testYamlBigFile(allocator: std.mem.Allocator) !void {
 }
 
 fn testTomlGroupings(allocator: std.mem.Allocator) !void {
-    const output = try runParaTomlCommand(allocator, "./test/build-checks/groupings.para");
+    const output = try runParaTomlCommand(allocator, "./test/suite/groupings.para");
     defer allocator.free(output);
 
     try testing.expect(std.mem.indexOf(u8, output, "newPersonAge = 50") != null);
@@ -737,7 +737,7 @@ fn testTomlGroupings(allocator: std.mem.Allocator) !void {
 }
 
 fn testTomlBigFile(allocator: std.mem.Allocator) !void {
-    const output = try runParaTomlCommand(allocator, "./test/build-checks/big_file.para");
+    const output = try runParaTomlCommand(allocator, "./test/suite/big_file.para");
     defer allocator.free(output);
 
     try testing.expect(std.mem.indexOf(u8, output, "[person]") != null);
@@ -748,7 +748,7 @@ fn testTomlBigFile(allocator: std.mem.Allocator) !void {
 }
 
 fn testRonGroupings(allocator: std.mem.Allocator) !void {
-    const output = try runParaRonCommand(allocator, "./test/build-checks/groupings.para");
+    const output = try runParaRonCommand(allocator, "./test/suite/groupings.para");
     defer allocator.free(output);
 
     try testing.expect(std.mem.indexOf(u8, output, "(") != null);
@@ -759,7 +759,7 @@ fn testRonGroupings(allocator: std.mem.Allocator) !void {
 }
 
 fn testRonBigFile(allocator: std.mem.Allocator) !void {
-    const output = try runParaRonCommand(allocator, "./test/build-checks/big_file.para");
+    const output = try runParaRonCommand(allocator, "./test/suite/big_file.para");
     defer allocator.free(output);
 
     try testing.expect(std.mem.indexOf(u8, output, "person: (") != null);
@@ -770,7 +770,7 @@ fn testRonBigFile(allocator: std.mem.Allocator) !void {
 }
 
 fn testDivisionOperator(allocator: std.mem.Allocator) !void {
-    const output = try runParaCommand(allocator, "./test/build-checks/division.para");
+    const output = try runParaCommand(allocator, "./test/suite/division.para");
     defer allocator.free(output);
 
     var outputs = try parseOutput(output, allocator);
@@ -782,7 +782,7 @@ fn testDivisionOperator(allocator: std.mem.Allocator) !void {
 }
 
 fn testUnterminatedMultilineCommentFails(allocator: std.mem.Allocator) !void {
-    const output = try runParaCommandExpectFailure(allocator, "./test/build-checks/unterminated_comment.para");
+    const output = try runParaCommandExpectFailure(allocator, "./test/suite/unterminated_comment.para");
     defer allocator.free(output);
 
     try testing.expect(
@@ -792,21 +792,21 @@ fn testUnterminatedMultilineCommentFails(allocator: std.mem.Allocator) !void {
 }
 
 fn testIntegerOverflowLiteralFails(allocator: std.mem.Allocator) !void {
-    const output = try runParaCommandExpectFailure(allocator, "./test/build-checks/int_overflow.para");
+    const output = try runParaCommandExpectFailure(allocator, "./test/suite/int_overflow.para");
     defer allocator.free(output);
 
     try testing.expect(std.mem.indexOf(u8, output, "Invalid integer literal") != null);
 }
 
 fn testJsonDeterministicOrdering(allocator: std.mem.Allocator) !void {
-    const output = try runParaJsonCommand(allocator, "./test/build-checks/json_order.para");
+    const output = try runParaJsonCommand(allocator, "./test/suite/json_order.para");
     defer allocator.free(output);
 
     try testing.expectEqualStrings("{\"a\":2,\"b\":1,\"person\":{\"age\":1}}\n", output);
 }
 
 fn testJsonArrays(allocator: std.mem.Allocator) !void {
-    const output = try runParaJsonCommand(allocator, "./test/build-checks/arrays.para");
+    const output = try runParaJsonCommand(allocator, "./test/suite/arrays.para");
     defer allocator.free(output);
 
     try testing.expect(std.mem.indexOf(u8, output, "\"empty\":[]") != null);
@@ -817,7 +817,7 @@ fn testJsonArrays(allocator: std.mem.Allocator) !void {
 }
 
 fn testZonArrays(allocator: std.mem.Allocator) !void {
-    const output = try runParaZonCommand(allocator, "./test/build-checks/arrays.para");
+    const output = try runParaZonCommand(allocator, "./test/suite/arrays.para");
     defer allocator.free(output);
 
     try testing.expect(std.mem.indexOf(u8, output, ".empty = .{") != null);
@@ -829,7 +829,7 @@ fn testZonArrays(allocator: std.mem.Allocator) !void {
 }
 
 fn testYamlArrays(allocator: std.mem.Allocator) !void {
-    const output = try runParaYamlCommand(allocator, "./test/build-checks/arrays.para");
+    const output = try runParaYamlCommand(allocator, "./test/suite/arrays.para");
     defer allocator.free(output);
 
     try testing.expect(std.mem.indexOf(u8, output, "empty: []") != null);
@@ -843,7 +843,7 @@ fn testYamlArrays(allocator: std.mem.Allocator) !void {
 }
 
 fn testTomlArrays(allocator: std.mem.Allocator) !void {
-    const output = try runParaTomlCommand(allocator, "./test/build-checks/arrays.para");
+    const output = try runParaTomlCommand(allocator, "./test/suite/arrays.para");
     defer allocator.free(output);
 
     try testing.expect(std.mem.indexOf(u8, output, "empty = []") != null);
@@ -855,7 +855,7 @@ fn testTomlArrays(allocator: std.mem.Allocator) !void {
 }
 
 fn testRonArrays(allocator: std.mem.Allocator) !void {
-    const output = try runParaRonCommand(allocator, "./test/build-checks/arrays.para");
+    const output = try runParaRonCommand(allocator, "./test/suite/arrays.para");
     defer allocator.free(output);
 
     try testing.expect(std.mem.indexOf(u8, output, "empty: [") != null);
