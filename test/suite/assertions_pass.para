@@ -1,0 +1,16 @@
+const port = 8080
+# assert port > 1024 and port < 65535
+
+const timeout = 30
+# assert timeout > 0 and timeout < 300
+
+const percentage = 85
+# assert percentage >= 0 and percentage <= 100
+
+var counter = 5
+# assert counter > 0 and counter < 10
+
+port?
+timeout?
+percentage?
+counter?

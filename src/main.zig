@@ -124,7 +124,7 @@ pub fn main() !void {
         para_parser.dumpParser();
     }
 
-    var preprocessor = Preprocessor.init(allocator);
+    var preprocessor = try Preprocessor.init(allocator);
     defer preprocessor.deinit();
 
     preprocessor.setSourceLines(para_lexer.lines.items);

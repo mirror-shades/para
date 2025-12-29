@@ -13,7 +13,7 @@ const yaml_backend = para_src.yaml_backend;
 const toml_backend = para_src.toml_backend;
 const zon_backend = para_src.zon_backend;
 
-const TEST_TOTAL = 27;
+const TEST_TOTAL = 30;
 
 fn print(comptime format: []const u8) void {
     printf(format, .{});
@@ -952,12 +952,52 @@ fn testRonArrays(allocator: std.mem.Allocator) !void {
     try testing.expect(std.mem.indexOf(u8, output, "scores: [") != null);
 }
 
+fn testAssertionsPass(allocator: std.mem.Allocator) !void {
+    const output = try runParaCommand(allocator, "./test/suite/assertions_pass.para");
+    defer allocator.free(output);
+
+    var outputs = try parseOutput(output, allocator);
+    defer outputs.deinit(allocator);
+
+    try testing.expectEqualStrings("port", outputs.items[0].name);
+    try testing.expectEqualStrings("int", outputs.items[0].type);
+    try testing.expectEqualStrings("8080", outputs.items[0].value);
+
+    try testing.expectEqualStrings("timeout", outputs.items[1].name);
+    try testing.expectEqualStrings("int", outputs.items[1].type);
+    try testing.expectEqualStrings("30", outputs.items[1].value);
+
+    try testing.expectEqualStrings("percentage", outputs.items[2].name);
+    try testing.expectEqualStrings("int", outputs.items[2].type);
+    try testing.expectEqualStrings("85", outputs.items[2].value);
+
+    try testing.expectEqualStrings("counter", outputs.items[3].name);
+    try testing.expectEqualStrings("int", outputs.items[3].type);
+    try testing.expectEqualStrings("5", outputs.items[3].value);
+}
+
+fn testAssertionsFail(allocator: std.mem.Allocator) !void {
+    const output = try runParaCommandExpectFailure(allocator, "./test/suite/assertions_fail.para");
+    defer allocator.free(output);
+
+    try testing.expect(std.mem.indexOf(u8, output, "Assertion failed") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "expression must evaluate to true") != null);
+}
+
+fn testAssertionsDynamic(allocator: std.mem.Allocator) !void {
+    const output = try runParaCommandExpectFailure(allocator, "./test/suite/assertions_dynamic.para");
+    defer allocator.free(output);
+
+    try testing.expect(std.mem.indexOf(u8, output, "Assertion failed after variable 'port' changed") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "expression must evaluate to true") != null);
+}
+
 test "IR build fails on OOM (no silent export data loss)" {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    var pre = Preprocessor.init(allocator);
+    var pre = try Preprocessor.init(allocator);
     defer pre.deinit();
 
     const long_string = "this string is definitely longer than sixteen bytes";
@@ -1047,6 +1087,9 @@ test "para language tests" {
     runner.runTest("RON Grouping Test", testRonGroupings);
     runner.runTest("RON Big File Test", testRonBigFile);
     runner.runTest("RON Arrays Test", testRonArrays);
+    runner.runTest("Assertions Pass", testAssertionsPass);
+    runner.runTest("Assertions Fail", testAssertionsFail);
+    runner.runTest("Assertions Dynamic", testAssertionsDynamic);
 
     runner.generateReport();
 

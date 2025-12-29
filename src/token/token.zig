@@ -70,6 +70,8 @@ pub const TokenKind = enum {
     TKN_NEQ, // !=
     TKN_COMMA, // ,
     TKN_EXCLAIM, // !
+    TKN_AND, // and
+    TKN_OR, // or
     TKN_VAR, // var keyword
     TKN_CONST, // const keyword
     TKN_TEMP, // temp keyword
@@ -80,6 +82,7 @@ pub const TokenKind = enum {
     TKN_INSPECT, // ?
     TKN_LOOKUP, //
     TKN_EXPRESSION, // expression
+    TKN_ASSERT, // assert keyword
     TKN_EOF, // end of file
 
     pub fn toString(self: TokenKind) []const u8 {
@@ -105,21 +108,24 @@ pub const TokenKind = enum {
             .TKN_LBRACKET => "TKN_LBRACKET",
             .TKN_RBRACKET => "TKN_RBRACKET",
             .TKN_COMMA => "TKN_COMMA",
-            .TKN_GT => "TKN_GT",
-            .TKN_LT => "TKN_LT",
-            .TKN_GTE => "TKN_GTE",
-            .TKN_LTE => "TKN_LTE",
-            .TKN_EQ => "TKN_EQ",
-            .TKN_NEQ => "TKN_NEQ",
             .TKN_EXCLAIM => "TKN_EXCLAIM",
+            .TKN_AND => "TKN_AND",
+            .TKN_OR => "TKN_OR",
             .TKN_VAR => "TKN_VAR",
             .TKN_CONST => "TKN_CONST",
             .TKN_TEMP => "TKN_TEMP",
             .TKN_TYPE => "TKN_TYPE",
             .TKN_GROUP => "TKN_GROUP",
             .TKN_VALUE => "TKN_VALUE",
+            .TKN_GT => "TKN_GT",
+            .TKN_LT => "TKN_LT",
+            .TKN_GTE => "TKN_GTE",
+            .TKN_LTE => "TKN_LTE",
+            .TKN_EQ => "TKN_EQ",
+            .TKN_NEQ => "TKN_NEQ",
             .TKN_INSPECT => "TKN_INSPECT",
             .TKN_LOOKUP => "TKN_LOOKUP",
+            .TKN_ASSERT => "TKN_ASSERT",
         };
     }
 

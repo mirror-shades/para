@@ -24,6 +24,67 @@ pub const Preprocessor = struct {
         token_number: usize,
     };
 
+    pub const Assertion = struct {
+        /// The expression tokens to evaluate
+        expression: []Token,
+        /// Variables this assertion depends on (for re-evaluation when they change)
+        dependencies: std.StringHashMap(void),
+        /// Source location for diagnostics
+        line_number: usize,
+        token_number: usize,
+
+        pub fn init(allocator: std.mem.Allocator, expr: []Token, line: usize, token: usize) Assertion {
+            return Assertion{
+                .expression = allocator.dupe(Token, expr) catch unreachable,
+                .dependencies = std.StringHashMap(void).init(allocator),
+                .line_number = line,
+                .token_number = token,
+            };
+        }
+
+        pub fn deinit(self: *Assertion, allocator: std.mem.Allocator) void {
+            allocator.free(self.expression);
+            self.dependencies.deinit();
+        }
+
+        pub fn addDependency(self: *Assertion, var_name: []const u8) !void {
+            try self.dependencies.put(var_name, {});
+        }
+    };
+
+    /// Extract variable dependencies from an assertion expression
+    fn extractAssertionDependencies(_: *Preprocessor, assertion: *Assertion, expression: []Token) !void {
+        for (expression) |token| {
+            if (token.token_type == .TKN_IDENTIFIER) {
+                // For now, assume all identifiers in assertions are variable names
+                // TODO: Support full path resolution like group.subgroup.var
+                try assertion.addDependency(token.literal);
+            }
+        }
+    }
+
+    /// Check and re-evaluate assertions that depend on the given variable
+    fn checkAssertionsForVariable(self: *Preprocessor, var_name: []const u8) !void {
+        for (self.assertions.items) |*assertion| {
+            // Check if this assertion depends on the changed variable
+            if (assertion.dependencies.contains(var_name)) {
+                // Re-evaluate the assertion
+                const result = try self.evaluateExpression(assertion.expression);
+                if (result != .bool or !result.bool) {
+                    // Assertion failed
+                    if (self.source_lines.len > 0) {
+                        self.underlineAt(assertion.line_number, assertion.token_number, 8); // "#assert" length
+                    }
+                    Reporting.throwError(
+                        "Assertion failed after variable '{s}' changed: expression must evaluate to true (line {d}, token {d})\n",
+                        .{ var_name, assertion.line_number, assertion.token_number },
+                    );
+                    return error.AssertionFailed;
+                }
+            }
+        }
+    }
+
     pub const Scope = struct {
         variables: std.StringHashMap(Variable),
         nested_scopes: std.StringHashMap(*Scope),
@@ -52,12 +113,15 @@ pub const Preprocessor = struct {
     root_scope: Scope,
     // Borrowed view of source lines for diagnostics (from the lexer).
     source_lines: [][]const u8,
+    // Stored assertions for dynamic evaluation
+    assertions: std.ArrayList(Assertion),
 
-    pub fn init(allocator: std.mem.Allocator) Preprocessor {
+    pub fn init(allocator: std.mem.Allocator) !Preprocessor {
         return Preprocessor{
             .allocator = allocator,
             .root_scope = Scope.init(allocator),
             .source_lines = &[_][]const u8{},
+            .assertions = try std.ArrayList(Assertion).initCapacity(allocator, 0),
         };
     }
 
@@ -67,6 +131,10 @@ pub const Preprocessor = struct {
 
     pub fn deinit(self: *Preprocessor) void {
         self.root_scope.deinit();
+        for (self.assertions.items) |*assertion| {
+            assertion.deinit(self.allocator);
+        }
+        self.assertions.deinit(self.allocator);
     }
 
     pub fn buildIrProgram(self: *Preprocessor) !ir.Program {
@@ -936,6 +1004,9 @@ pub const Preprocessor = struct {
         };
 
         try target_scope.variables.put(identifier.name, variable);
+
+        // Check assertions that depend on this variable
+        try self.checkAssertionsForVariable(identifier.name);
     }
 
     fn buildExpressionLookupPath(self: *Preprocessor, expr_tokens: []Token, lookup_token: Token) ![][]const u8 {
@@ -1004,7 +1075,9 @@ pub const Preprocessor = struct {
                     .TKN_POWER => 3,
                     .TKN_STAR, .TKN_SLASH, .TKN_PERCENT => 2,
                     .TKN_PLUS, .TKN_MINUS => 1,
-                    .TKN_GT, .TKN_LT, .TKN_GTE, .TKN_LTE, .TKN_EQ, .TKN_NEQ => 0,
+                    .TKN_GT, .TKN_LT, .TKN_GTE, .TKN_LTE, .TKN_EQ, .TKN_NEQ => 2,
+                    .TKN_AND => 1,
+                    .TKN_OR => 0,
                     else => 0,
                 };
             }
@@ -1016,6 +1089,8 @@ pub const Preprocessor = struct {
             const token = tokens[idx];
 
             if (token.token_type == .TKN_VALUE) {
+                try output.append(self.allocator, token);
+            } else if (token.token_type == .TKN_IDENTIFIER) {
                 try output.append(self.allocator, token);
             } else if (token.token_type == .TKN_LOOKUP) {
                 // Treat this as the start of a dotted path like person.job.salary.
@@ -1042,7 +1117,8 @@ pub const Preprocessor = struct {
                 token.token_type == .TKN_PERCENT or token.token_type == .TKN_POWER or
                 token.token_type == .TKN_GT or token.token_type == .TKN_LT or
                 token.token_type == .TKN_GTE or token.token_type == .TKN_LTE or
-                token.token_type == .TKN_EQ or token.token_type == .TKN_NEQ)
+                token.token_type == .TKN_EQ or token.token_type == .TKN_NEQ or
+                token.token_type == .TKN_AND or token.token_type == .TKN_OR)
             {
                 while (stack.items.len > 0 and
                     getPrecedence(stack.items[stack.items.len - 1].token_type) >= getPrecedence(token.token_type))
@@ -1094,6 +1170,35 @@ pub const Preprocessor = struct {
                         .nothing => Value{ .nothing = {} },
                     };
                     try result_stack.append(self.allocator, value);
+                },
+                .TKN_IDENTIFIER => {
+                    // Resolve a variable using the same logic as TKN_LOOKUP
+                    const path = try self.buildExpressionLookupPath(tokens, token);
+                    defer self.allocator.free(path);
+
+                    const maybe_var = self.getLookupValue(path) catch {
+                        if (self.source_lines.len > 0) {
+                            self.underlineAt(token.line_number, token.token_number, token.literal.len);
+                        }
+                        Reporting.throwError(
+                            "Variable '{s}' not found in expression (line {d}, token {d})\n",
+                            .{ token.literal, token.line_number, token.token_number },
+                        );
+                        return error.VariableNotFoundInExpression;
+                    };
+
+                    if (maybe_var) |resolved| {
+                        try result_stack.append(self.allocator, resolved.value);
+                    } else {
+                        if (self.source_lines.len > 0) {
+                            self.underlineAt(token.line_number, token.token_number, token.literal.len);
+                        }
+                        Reporting.throwError(
+                            "Variable '{s}' not found in expression (line {d}, token {d})\n",
+                            .{ token.literal, token.line_number, token.token_number },
+                        );
+                        return error.VariableNotFoundInExpression;
+                    }
                 },
                 .TKN_LOOKUP => {
                     // Resolve a variable or dotted path (person.job.salary) using
@@ -1311,6 +1416,42 @@ pub const Preprocessor = struct {
                             return error.UnsupportedType;
                         },
                     }
+
+                    _ = result_stack.orderedRemove(b_index);
+                    _ = result_stack.orderedRemove(a_index);
+                    try result_stack.append(self.allocator, Value{ .bool = result });
+                },
+                .TKN_AND, .TKN_OR => {
+                    if (result_stack.items.len < 2) {
+                        if (self.source_lines.len > 0) {
+                            self.underlineAt(token.line_number, token.token_number, token.literal.len);
+                        }
+                        Reporting.throwError("Not enough operands for operator {s} (line {d}, token {d})\n", .{ token.literal, token.line_number, token.token_number });
+                        return error.NotEnoughOperands;
+                    }
+
+                    const b_index = result_stack.items.len - 1;
+                    const a_index = result_stack.items.len - 2;
+
+                    const b = result_stack.items[b_index];
+                    const a = result_stack.items[a_index];
+
+                    // Both operands must be boolean for logical operations
+                    if (a != .bool or b != .bool) {
+                        if (self.source_lines.len > 0) {
+                            self.underlineAt(token.line_number, token.token_number, token.literal.len);
+                        }
+                        Reporting.throwError("Logical operator {s} requires boolean operands (line {d}, token {d})\n", .{ token.literal, token.line_number, token.token_number });
+                        return error.TypeMismatch;
+                    }
+
+                    const a_val = a.bool;
+                    const b_val = b.bool;
+                    const result = switch (token.token_type) {
+                        .TKN_AND => a_val and b_val,
+                        .TKN_OR => a_val or b_val,
+                        else => false,
+                    };
 
                     _ = result_stack.orderedRemove(b_index);
                     _ = result_stack.orderedRemove(a_index);
@@ -1607,6 +1748,57 @@ pub const Preprocessor = struct {
                             );
                             return error.VariableNotFoundInScope;
                         }
+                    }
+                },
+                .TKN_ASSERT => {
+                    if (i + 1 < tokens.len and tokens[i + 1].token_type == .TKN_EXPRESSION) {
+                        defer i += 1;
+                        const expr_token = tokens[i + 1];
+
+                        if (expr_token.expression) |expression| {
+                            // Store the assertion for later evaluation
+                            try self.assertions.append(self.allocator, Assertion.init(
+                                self.allocator,
+                                expression,
+                                current_token.line_number,
+                                current_token.token_number,
+                            ));
+
+                            // Extract variable dependencies from the expression
+                            try self.extractAssertionDependencies(&self.assertions.items[self.assertions.items.len - 1], expression);
+
+                            // Evaluate the assertion immediately
+                            const result = try self.evaluateExpression(expression);
+                            if (result != .bool or !result.bool) {
+                                // Assertion failed
+                                if (self.source_lines.len > 0) {
+                                    self.underlineAt(current_token.line_number, current_token.token_number, 8); // "#assert" length
+                                }
+                                Reporting.throwError(
+                                    "Assertion failed: expression must evaluate to true (line {d}, token {d})\n",
+                                    .{ current_token.line_number, current_token.token_number },
+                                );
+                                return error.AssertionFailed;
+                            }
+                        } else {
+                            if (self.source_lines.len > 0) {
+                                self.underlineAt(current_token.line_number, current_token.token_number, 8);
+                            }
+                            Reporting.throwError(
+                                "Expected expression after #assert (line {d}, token {d})\n",
+                                .{ current_token.line_number, current_token.token_number },
+                            );
+                            return error.ExpectedExpression;
+                        }
+                    } else {
+                        if (self.source_lines.len > 0) {
+                            self.underlineAt(current_token.line_number, current_token.token_number, 8);
+                        }
+                        Reporting.throwError(
+                            "Expected expression after #assert (line {d}, token {d})\n",
+                            .{ current_token.line_number, current_token.token_number },
+                        );
+                        return error.ExpectedExpression;
                     }
                 },
                 else => {},

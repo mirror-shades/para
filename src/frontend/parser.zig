@@ -599,6 +599,53 @@ pub const Parser = struct {
                     });
                     continue;
                 },
+                .TKN_ASSERT => {
+                    // Create the assertion token
+                    try self.parsed_tokens.append(self.allocator, ParsedToken{
+                        .token_type = .TKN_ASSERT,
+                        .literal = current_token.literal,
+                        .expression = null,
+                        .value_type = .nothing,
+                        .value = .{ .nothing = {} },
+                        .line_number = current_token.line_number,
+                        .token_number = current_token.token_number,
+                        .is_mutable = false,
+                        .is_temporary = false,
+                        .has_decl_prefix = false,
+                    });
+
+                    // Collect expression tokens until end of line
+                    const expr_start = current_index;
+                    while (current_index < self.tokens.len and
+                        self.tokens[current_index].line_number == current_token.line_number and
+                        self.tokens[current_index].token_type != .TKN_NEWLINE)
+                    {
+                        current_index += 1;
+                    }
+
+                    const expr_len = current_index - expr_start;
+                    if (expr_len > 0) {
+                        var expression_tokens = try self.allocator.alloc(Token, expr_len);
+                        for (self.tokens[expr_start..current_index], 0..) |token, i| {
+                            expression_tokens[i] = token;
+                        }
+
+                        try self.parsed_tokens.append(self.allocator, ParsedToken{
+                            .token_type = .TKN_EXPRESSION,
+                            .literal = "AssertionExpression",
+                            .expression = expression_tokens,
+                            .value_type = .nothing,
+                            .value = .{ .nothing = {} },
+                            .line_number = self.tokens[expr_start].line_number,
+                            .token_number = self.tokens[expr_start].token_number,
+                            .is_mutable = false,
+                            .is_temporary = false,
+                            .has_decl_prefix = false,
+                        });
+                    }
+
+                    continue;
+                },
                 .TKN_EXCLAIM => continue,
                 .TKN_LPAREN => continue,
                 .TKN_RPAREN => continue,

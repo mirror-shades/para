@@ -193,7 +193,7 @@ pub const Lexer = struct {
                 continue;
             }
 
-            if (c == 'i' or c == 's' or c == 'b' or c == 'f' or c == 't' or c == 'T' or c == 'F' or c == 'I' or c == 'S' or c == 'B') {
+            if (c == 'i' or c == 's' or c == 'b' or c == 'f' or c == 't' or c == 'T' or c == 'F' or c == 'I' or c == 'S' or c == 'B' or c == 'a' or c == 'o') {
                 const current_column = self.column;
                 const word = try self.readWord();
 
@@ -237,6 +237,22 @@ pub const Lexer = struct {
                     try self.tokens.append(self.allocator, .{
                         .literal = word,
                         .token_type = .TKN_TEMP,
+                        .value_type = .nothing,
+                        .line_number = self.line,
+                        .token_number = current_column,
+                    });
+                } else if (c == 'a' and std.mem.eql(u8, word, "and")) {
+                    try self.tokens.append(self.allocator, .{
+                        .literal = word,
+                        .token_type = .TKN_AND,
+                        .value_type = .nothing,
+                        .line_number = self.line,
+                        .token_number = current_column,
+                    });
+                } else if (c == 'o' and std.mem.eql(u8, word, "or")) {
+                    try self.tokens.append(self.allocator, .{
+                        .literal = word,
+                        .token_type = .TKN_OR,
                         .value_type = .nothing,
                         .line_number = self.line,
                         .token_number = current_column,
@@ -433,6 +449,28 @@ pub const Lexer = struct {
                 },
                 '#' => {
                     const current_column = self.column;
+                    self.advance(); // consume '#'
+                    self.skipWhitespace();
+
+                    // Check if next word is "assert"
+                    if (self.peek()) |next_char| {
+                        if ((next_char >= 'a' and next_char <= 'z') or (next_char >= 'A' and next_char <= 'Z')) {
+                            const word = try self.readWord();
+                            if (std.mem.eql(u8, word, "assert")) {
+                                try self.tokens.append(self.allocator, .{
+                                    .literal = "#assert",
+                                    .token_type = .TKN_ASSERT,
+                                    .value_type = .nothing,
+                                    .line_number = self.line,
+                                    .token_number = current_column,
+                                });
+                                self.token_count += 1;
+                                continue;
+                            }
+                        }
+                    }
+
+                    // Not "assert", emit regular hash token
                     try self.tokens.append(self.allocator, .{
                         .literal = "#",
                         .token_type = .TKN_HASH,
@@ -441,7 +479,6 @@ pub const Lexer = struct {
                         .token_number = current_column,
                     });
                     self.token_count += 1;
-                    self.advance();
                 },
                 '*' => {
                     const current_column = self.column;
