@@ -17,6 +17,75 @@ NOTE: This project is still in early development and should not be relied on in 
 - **Mutability**: Variables must be explicitly declared as `var` (mutable) or `const` (immutable).
 - **Scoped Naming**: Variables and groups have distinct namespaces within their scope.
 
+## Features
+
+### Expressions and Operators
+
+Para supports mathematical expressions with standard arithmetic operators:
+
+```para
+const result = 10 + 5 * 2  // 20
+const power = 2 ^ 3        // 8 (exponentiation)
+const modulo = 17 % 5      // 2
+const division = 15 / 3    // 5
+```
+
+### Peek Operator (`?`)
+
+The peek operator allows you to inspect variable values during preprocessing. Place `?` after any variable or expression to print its current value and type:
+
+```para
+const x = 42
+x?  // Prints: [line:col] x :int = 42
+
+const result = x + 8
+result?  // Prints: [line:col] result :int = 50
+```
+
+This is especially useful for debugging complex expressions or verifying preprocessing steps.
+
+### Variable Assignment and Reassignment
+
+Variables can be assigned and reassigned within their scope:
+
+```para
+var counter = 0
+counter = counter + 1  // Reassignment allowed for 'var'
+```
+
+### Temporary Variables
+
+Use the `temp` keyword to declare variables that are only used during preprocessing and dropped from the final output:
+
+```para
+temp const intermediate = 100
+const final = intermediate * 2  // 'intermediate' won't appear in output
+```
+
+### Assertions
+
+You can add assertions to help catch incorrect or corrupted data:
+
+```para
+const port = 8080
+# assert port > 1024 and port < 65535  // Valid port range
+
+const timeout = 30
+# assert timeout > 0 and timeout < 300  // Reasonable timeout range
+
+const percentage = 85
+# assert percentage >= 0 and percentage <= 100  // Valid percentage
+```
+
+### Logical Operations
+
+Basic logical negation is supported:
+
+```para
+const flag = true
+const inverted = !flag  // false
+```
+
 ## Syntax Rules
 
 - Variables are declared with `:` followed by a type and `=` followed by a value or expression.

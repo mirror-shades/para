@@ -55,12 +55,19 @@ pub const TokenKind = enum {
     TKN_MINUS, // -
     TKN_POWER, // ^
     TKN_PERCENT, // %
+    TKN_HASH, // #
     TKN_LPAREN, // (
     TKN_RPAREN, // )
     TKN_LBRACE, // {
     TKN_RBRACE, // }
     TKN_LBRACKET, // [
     TKN_RBRACKET, // ]
+    TKN_GT, // >
+    TKN_LT, // <
+    TKN_GTE, // >=
+    TKN_LTE, // <=
+    TKN_EQ, // ==
+    TKN_NEQ, // !=
     TKN_COMMA, // ,
     TKN_EXCLAIM, // !
     TKN_VAR, // var keyword
@@ -90,6 +97,7 @@ pub const TokenKind = enum {
             .TKN_MINUS => "TKN_MINUS",
             .TKN_POWER => "TKN_POWER",
             .TKN_PERCENT => "TKN_PERCENT",
+            .TKN_HASH => "TKN_HASH",
             .TKN_LPAREN => "TKN_LPAREN",
             .TKN_RPAREN => "TKN_RPAREN",
             .TKN_LBRACE => "TKN_LBRACE",
@@ -97,6 +105,12 @@ pub const TokenKind = enum {
             .TKN_LBRACKET => "TKN_LBRACKET",
             .TKN_RBRACKET => "TKN_RBRACKET",
             .TKN_COMMA => "TKN_COMMA",
+            .TKN_GT => "TKN_GT",
+            .TKN_LT => "TKN_LT",
+            .TKN_GTE => "TKN_GTE",
+            .TKN_LTE => "TKN_LTE",
+            .TKN_EQ => "TKN_EQ",
+            .TKN_NEQ => "TKN_NEQ",
             .TKN_EXCLAIM => "TKN_EXCLAIM",
             .TKN_VAR => "TKN_VAR",
             .TKN_CONST => "TKN_CONST",

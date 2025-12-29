@@ -1,0 +1,4 @@
+const x = 5
+const y = 10
+const result1 = x < y
+const result2 = !result1

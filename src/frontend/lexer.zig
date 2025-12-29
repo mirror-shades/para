@@ -281,15 +281,95 @@ pub const Lexer = struct {
                 '=' => {
                     const current_column = self.column;
                     self.advance();
-                    try self.tokens.append(self.allocator, .{
-                        .literal = "=",
-                        .token_type = .TKN_VALUE_ASSIGN,
-                        .value_type = .nothing,
-                        .line_number = self.line,
-                        .token_number = current_column,
-                    });
+                    if (self.peek() == '=') {
+                        self.advance();
+                        try self.tokens.append(self.allocator, .{
+                            .literal = "==",
+                            .token_type = .TKN_EQ,
+                            .value_type = .nothing,
+                            .line_number = self.line,
+                            .token_number = current_column,
+                        });
+                    } else {
+                        try self.tokens.append(self.allocator, .{
+                            .literal = "=",
+                            .token_type = .TKN_VALUE_ASSIGN,
+                            .value_type = .nothing,
+                            .line_number = self.line,
+                            .token_number = current_column,
+                        });
+                        self.assignment_mode = true;
+                    }
                     self.token_count += 1;
-                    self.assignment_mode = true;
+                },
+                '>' => {
+                    const current_column = self.column;
+                    self.advance();
+                    if (self.peek() == '=') {
+                        self.advance();
+                        try self.tokens.append(self.allocator, .{
+                            .literal = ">=",
+                            .token_type = .TKN_GTE,
+                            .value_type = .nothing,
+                            .line_number = self.line,
+                            .token_number = current_column,
+                        });
+                    } else {
+                        try self.tokens.append(self.allocator, .{
+                            .literal = ">",
+                            .token_type = .TKN_GT,
+                            .value_type = .nothing,
+                            .line_number = self.line,
+                            .token_number = current_column,
+                        });
+                    }
+                    self.token_count += 1;
+                },
+                '<' => {
+                    const current_column = self.column;
+                    self.advance();
+                    if (self.peek() == '=') {
+                        self.advance();
+                        try self.tokens.append(self.allocator, .{
+                            .literal = "<=",
+                            .token_type = .TKN_LTE,
+                            .value_type = .nothing,
+                            .line_number = self.line,
+                            .token_number = current_column,
+                        });
+                    } else {
+                        try self.tokens.append(self.allocator, .{
+                            .literal = "<",
+                            .token_type = .TKN_LT,
+                            .value_type = .nothing,
+                            .line_number = self.line,
+                            .token_number = current_column,
+                        });
+                    }
+                    self.token_count += 1;
+                },
+                '!' => {
+                    const current_column = self.column;
+                    self.advance();
+                    if (self.peek() == '=') {
+                        self.advance();
+                        try self.tokens.append(self.allocator, .{
+                            .literal = "!=",
+                            .token_type = .TKN_NEQ,
+                            .value_type = .nothing,
+                            .line_number = self.line,
+                            .token_number = current_column,
+                        });
+                    } else {
+                        try self.tokens.append(self.allocator, .{
+                            .literal = "!",
+                            .token_type = .TKN_EXCLAIM,
+                            .value_type = .nothing,
+                            .line_number = self.line,
+                            .token_number = current_column,
+                        });
+                    }
+                    self.token_count += 1;
                 },
                 '-' => {
                     const current_column = self.column;
@@ -344,6 +424,18 @@ pub const Lexer = struct {
                     try self.tokens.append(self.allocator, .{
                         .literal = "%",
                         .token_type = .TKN_PERCENT,
+                        .value_type = .nothing,
+                        .line_number = self.line,
+                        .token_number = current_column,
+                    });
+                    self.token_count += 1;
+                    self.advance();
+                },
+                '#' => {
+                    const current_column = self.column;
+                    try self.tokens.append(self.allocator, .{
+                        .literal = "#",
+                        .token_type = .TKN_HASH,
                         .value_type = .nothing,
                         .line_number = self.line,
                         .token_number = current_column,
@@ -440,18 +532,6 @@ pub const Lexer = struct {
                     try self.tokens.append(self.allocator, .{
                         .literal = ",",
                         .token_type = .TKN_COMMA,
-                        .value_type = .nothing,
-                        .line_number = self.line,
-                        .token_number = current_column,
-                    });
-                    self.token_count += 1;
-                    self.advance();
-                },
-                '!' => {
-                    const current_column = self.column;
-                    try self.tokens.append(self.allocator, .{
-                        .literal = "!",
-                        .token_type = .TKN_EXCLAIM,
                         .value_type = .nothing,
                         .line_number = self.line,
                         .token_number = current_column,

@@ -10,6 +10,11 @@ pub fn build(b: *std.Build) void {
     });
     b.installArtifact(exe);
 
+    const run_exe = b.addRunArtifact(exe);
+    const run_step = b.step("run", "Run the para executable");
+    run_exe.step.dependOn(b.getInstallStep());
+    run_step.dependOn(&run_exe.step);
+
     const test_exe = b.addTest(.{
         .name = "test",
         .root_module = b.createModule(.{

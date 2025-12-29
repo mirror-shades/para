@@ -984,6 +984,12 @@ pub const Preprocessor = struct {
             return error.EmptyExpression;
         }
 
+        // Debug: print tokens
+        std.debug.print("Evaluating expression with tokens:\n", .{});
+        for (tokens) |t| {
+            std.debug.print("  {s} ({s})\n", .{ t.literal, @tagName(t.token_type) });
+        }
+
         // Use the shunting yard algorithm to convert infix to postfix
         var stack: std.ArrayList(Token) = .empty;
         defer stack.deinit(self.allocator);
@@ -998,6 +1004,7 @@ pub const Preprocessor = struct {
                     .TKN_POWER => 3,
                     .TKN_STAR, .TKN_SLASH, .TKN_PERCENT => 2,
                     .TKN_PLUS, .TKN_MINUS => 1,
+                    .TKN_GT, .TKN_LT, .TKN_GTE, .TKN_LTE, .TKN_EQ, .TKN_NEQ => 0,
                     else => 0,
                 };
             }
@@ -1032,7 +1039,10 @@ pub const Preprocessor = struct {
                 try stack.append(self.allocator, token);
             } else if (token.token_type == .TKN_PLUS or token.token_type == .TKN_MINUS or
                 token.token_type == .TKN_STAR or token.token_type == .TKN_SLASH or
-                token.token_type == .TKN_PERCENT or token.token_type == .TKN_POWER)
+                token.token_type == .TKN_PERCENT or token.token_type == .TKN_POWER or
+                token.token_type == .TKN_GT or token.token_type == .TKN_LT or
+                token.token_type == .TKN_GTE or token.token_type == .TKN_LTE or
+                token.token_type == .TKN_EQ or token.token_type == .TKN_NEQ)
             {
                 while (stack.items.len > 0 and
                     getPrecedence(stack.items[stack.items.len - 1].token_type) >= getPrecedence(token.token_type))
@@ -1157,6 +1167,154 @@ pub const Preprocessor = struct {
                             return error.NonNumericValue;
                         },
                     }
+                },
+                .TKN_GT, .TKN_LT, .TKN_GTE, .TKN_LTE, .TKN_EQ, .TKN_NEQ => {
+                    if (result_stack.items.len < 2) {
+                        if (self.source_lines.len > 0) {
+                            self.underlineAt(token.line_number, token.token_number, token.literal.len);
+                        }
+                        Reporting.throwError("Not enough operands for operator {s} (line {d}, token {d})\n", .{ token.literal, token.line_number, token.token_number });
+                        return error.NotEnoughOperands;
+                    }
+
+                    const b_index = result_stack.items.len - 1;
+                    const a_index = result_stack.items.len - 2;
+
+                    const b = result_stack.items[b_index];
+                    const a = result_stack.items[a_index];
+
+                    var result: bool = false;
+
+                    // Handle different type comparisons
+                    switch (a) {
+                        .int => |a_val| {
+                            switch (b) {
+                                .int => |b_val| {
+                                    result = switch (token.token_type) {
+                                        .TKN_GT => a_val > b_val,
+                                        .TKN_LT => a_val < b_val,
+                                        .TKN_GTE => a_val >= b_val,
+                                        .TKN_LTE => a_val <= b_val,
+                                        .TKN_EQ => a_val == b_val,
+                                        .TKN_NEQ => a_val != b_val,
+                                        else => false,
+                                    };
+                                },
+                                .float => |b_val| {
+                                    const a_float = @as(f64, @floatFromInt(a_val));
+                                    result = switch (token.token_type) {
+                                        .TKN_GT => a_float > b_val,
+                                        .TKN_LT => a_float < b_val,
+                                        .TKN_GTE => a_float >= b_val,
+                                        .TKN_LTE => a_float <= b_val,
+                                        .TKN_EQ => a_float == b_val,
+                                        .TKN_NEQ => a_float != b_val,
+                                        else => false,
+                                    };
+                                },
+                                else => {
+                                    if (self.source_lines.len > 0) {
+                                        self.underlineAt(token.line_number, token.token_number, token.literal.len);
+                                    }
+                                    Reporting.throwError("Cannot compare int with {s} (line {d}, token {d})\n", .{ @tagName(b), token.line_number, token.token_number });
+                                    return error.TypeMismatch;
+                                },
+                            }
+                        },
+                        .float => |a_val| {
+                            switch (b) {
+                                .int => |b_val| {
+                                    const b_float = @as(f64, @floatFromInt(b_val));
+                                    result = switch (token.token_type) {
+                                        .TKN_GT => a_val > b_float,
+                                        .TKN_LT => a_val < b_float,
+                                        .TKN_GTE => a_val >= b_float,
+                                        .TKN_LTE => a_val <= b_float,
+                                        .TKN_EQ => a_val == b_float,
+                                        .TKN_NEQ => a_val != b_float,
+                                        else => false,
+                                    };
+                                },
+                                .float => |b_val| {
+                                    result = switch (token.token_type) {
+                                        .TKN_GT => a_val > b_val,
+                                        .TKN_LT => a_val < b_val,
+                                        .TKN_GTE => a_val >= b_val,
+                                        .TKN_LTE => a_val <= b_val,
+                                        .TKN_EQ => a_val == b_val,
+                                        .TKN_NEQ => a_val != b_val,
+                                        else => false,
+                                    };
+                                },
+                                else => {
+                                    if (self.source_lines.len > 0) {
+                                        self.underlineAt(token.line_number, token.token_number, token.literal.len);
+                                    }
+                                    Reporting.throwError("Cannot compare float with {s} (line {d}, token {d})\n", .{ @tagName(b), token.line_number, token.token_number });
+                                    return error.TypeMismatch;
+                                },
+                            }
+                        },
+                        .bool => |a_val| {
+                            switch (b) {
+                                .bool => |b_val| {
+                                    result = switch (token.token_type) {
+                                        .TKN_EQ => a_val == b_val,
+                                        .TKN_NEQ => a_val != b_val,
+                                        else => {
+                                            if (self.source_lines.len > 0) {
+                                                self.underlineAt(token.line_number, token.token_number, token.literal.len);
+                                            }
+                                            Reporting.throwError("Operator {s} not supported for bool values (line {d}, token {d})\n", .{ token.literal, token.line_number, token.token_number });
+                                            return error.InvalidOperatorForType;
+                                        },
+                                    };
+                                },
+                                else => {
+                                    if (self.source_lines.len > 0) {
+                                        self.underlineAt(token.line_number, token.token_number, token.literal.len);
+                                    }
+                                    Reporting.throwError("Cannot compare bool with {s} (line {d}, token {d})\n", .{ @tagName(b), token.line_number, token.token_number });
+                                    return error.TypeMismatch;
+                                },
+                            }
+                        },
+                        .string => |a_val| {
+                            switch (b) {
+                                .string => |b_val| {
+                                    result = switch (token.token_type) {
+                                        .TKN_EQ => std.mem.eql(u8, a_val, b_val),
+                                        .TKN_NEQ => !std.mem.eql(u8, a_val, b_val),
+                                        else => {
+                                            if (self.source_lines.len > 0) {
+                                                self.underlineAt(token.line_number, token.token_number, token.literal.len);
+                                            }
+                                            Reporting.throwError("Operator {s} not supported for string values (line {d}, token {d})\n", .{ token.literal, token.line_number, token.token_number });
+                                            return error.InvalidOperatorForType;
+                                        },
+                                    };
+                                },
+                                else => {
+                                    if (self.source_lines.len > 0) {
+                                        self.underlineAt(token.line_number, token.token_number, token.literal.len);
+                                    }
+                                    Reporting.throwError("Cannot compare string with {s} (line {d}, token {d})\n", .{ @tagName(b), token.line_number, token.token_number });
+                                    return error.TypeMismatch;
+                                },
+                            }
+                        },
+                        else => {
+                            if (self.source_lines.len > 0) {
+                                self.underlineAt(token.line_number, token.token_number, token.literal.len);
+                            }
+                            Reporting.throwError("Comparison not supported for type {s} (line {d}, token {d})\n", .{ @tagName(a), token.line_number, token.token_number });
+                            return error.UnsupportedType;
+                        },
+                    }
+
+                    _ = result_stack.orderedRemove(b_index);
+                    _ = result_stack.orderedRemove(a_index);
+                    try result_stack.append(self.allocator, Value{ .bool = result });
                 },
                 .TKN_PLUS, .TKN_MINUS, .TKN_STAR, .TKN_SLASH, .TKN_PERCENT, .TKN_POWER => {
                     if (result_stack.items.len < 2) {

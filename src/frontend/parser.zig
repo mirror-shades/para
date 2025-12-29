@@ -358,6 +358,13 @@ pub const Parser = struct {
                             printError("Empty expression detected\n", .{});
                             return error.EmptyExpression;
                         }
+                        // Skip over the tokens that were grabbed for the expression
+                        while (current_index < self.tokens.len and
+                            self.tokens[current_index].line_number == current_token.line_number and
+                            self.tokens[current_index].token_type != .TKN_NEWLINE)
+                        {
+                            current_index += 1;
+                        }
                     } else {
                         try self.parsed_tokens.append(self.allocator, ParsedToken{
                             .token_type = .TKN_VALUE_ASSIGN,
@@ -577,6 +584,21 @@ pub const Parser = struct {
                     });
                     continue;
                 },
+                .TKN_HASH => {
+                    try self.parsed_tokens.append(self.allocator, ParsedToken{
+                        .token_type = .TKN_HASH,
+                        .literal = current_token.literal,
+                        .expression = null,
+                        .value_type = .nothing,
+                        .value = .{ .nothing = {} },
+                        .line_number = current_token.line_number,
+                        .token_number = current_token.token_number,
+                        .is_mutable = false,
+                        .is_temporary = false,
+                        .has_decl_prefix = false,
+                    });
+                    continue;
+                },
                 .TKN_EXCLAIM => continue,
                 .TKN_LPAREN => continue,
                 .TKN_RPAREN => continue,
@@ -626,6 +648,12 @@ fn isExpressionToken(token: Token) bool {
         token.token_type == .TKN_SLASH or
         token.token_type == .TKN_PERCENT or
         token.token_type == .TKN_POWER or
+        token.token_type == .TKN_GT or
+        token.token_type == .TKN_LT or
+        token.token_type == .TKN_GTE or
+        token.token_type == .TKN_LTE or
+        token.token_type == .TKN_EQ or
+        token.token_type == .TKN_NEQ or
         token.token_type == .TKN_LPAREN or
         token.token_type == .TKN_RPAREN;
 }
