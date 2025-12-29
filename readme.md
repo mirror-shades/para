@@ -37,7 +37,7 @@ Para is a minimalist data representation language designed for clear, typed data
 
 ## Simple Types
 
-Para has five fixed types. Variables must be explicitly declared as `var` (mutable) or `const` (immutable). Temporary variables can be declared with the `temp` prefix and are dropped during the compression stage. Heterogeneous arrays will be added in the future.
+Para has five fixed scalar types. Variables must be explicitly declared as `var` (mutable) or `const` (immutable). Temporary variables can be declared with the `temp` prefix and are dropped during the compression stage. Homogeneous arrays are supported via `T[]` (and can be nested like `T[][]`).
 
 ### Integer
 
@@ -79,6 +79,16 @@ Accepted formats:
 ```para
 var created: time = 1710434700000
 var updated: time = "2024-03-14T16:45:00Z"
+```
+
+### Arrays
+
+Arrays are homogeneous and can be nested. Empty arrays require an explicit type annotation.
+
+```para
+const xs: int[] = [1, 2, 3]
+const xss: int[][] = [[1, 2], [3]]
+const empty: string[] = []
 ```
 
 ### Variables and Constants

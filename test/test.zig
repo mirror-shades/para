@@ -13,7 +13,7 @@ const yaml_backend = para_src.yaml_backend;
 const toml_backend = para_src.toml_backend;
 const zon_backend = para_src.zon_backend;
 
-const TEST_TOTAL = 21;
+const TEST_TOTAL = 26;
 
 fn print(comptime format: []const u8) void {
     printf(format, .{});
@@ -805,6 +805,67 @@ fn testJsonDeterministicOrdering(allocator: std.mem.Allocator) !void {
     try testing.expectEqualStrings("{\"a\":2,\"b\":1,\"person\":{\"age\":1}}\n", output);
 }
 
+fn testJsonArrays(allocator: std.mem.Allocator) !void {
+    const output = try runParaJsonCommand(allocator, "./test/build-checks/arrays.para");
+    defer allocator.free(output);
+
+    try testing.expect(std.mem.indexOf(u8, output, "\"empty\":[]") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "\"empty2\":[]") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "\"xs\":[1,2,3]") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "\"xss\":[[1,2],[3]]") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "\"person\":{\"scores\":[10,20]}") != null);
+}
+
+fn testZonArrays(allocator: std.mem.Allocator) !void {
+    const output = try runParaZonCommand(allocator, "./test/build-checks/arrays.para");
+    defer allocator.free(output);
+
+    try testing.expect(std.mem.indexOf(u8, output, ".empty = .{") != null);
+    try testing.expect(std.mem.indexOf(u8, output, ".empty2 = .{") != null);
+    try testing.expect(std.mem.indexOf(u8, output, ".xs = .{") != null);
+    try testing.expect(std.mem.indexOf(u8, output, ".xss = .{") != null);
+    try testing.expect(std.mem.indexOf(u8, output, ".person = .{") != null);
+    try testing.expect(std.mem.indexOf(u8, output, ".scores = .{") != null);
+}
+
+fn testYamlArrays(allocator: std.mem.Allocator) !void {
+    const output = try runParaYamlCommand(allocator, "./test/build-checks/arrays.para");
+    defer allocator.free(output);
+
+    try testing.expect(std.mem.indexOf(u8, output, "empty: []") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "empty2: []") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "xs:") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "- 1") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "xss:") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "person:") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "scores:") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "- 10") != null);
+}
+
+fn testTomlArrays(allocator: std.mem.Allocator) !void {
+    const output = try runParaTomlCommand(allocator, "./test/build-checks/arrays.para");
+    defer allocator.free(output);
+
+    try testing.expect(std.mem.indexOf(u8, output, "empty = []") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "empty2 = []") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "xs = [1, 2, 3]") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "xss = [[1, 2], [3]]") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "[person]") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "scores = [10, 20]") != null);
+}
+
+fn testRonArrays(allocator: std.mem.Allocator) !void {
+    const output = try runParaRonCommand(allocator, "./test/build-checks/arrays.para");
+    defer allocator.free(output);
+
+    try testing.expect(std.mem.indexOf(u8, output, "empty: [") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "empty2: [") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "xs: [") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "xss: [") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "person: (") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "scores: [") != null);
+}
+
 test "IR build fails on OOM (no silent export data loss)" {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
@@ -818,6 +879,7 @@ test "IR build fails on OOM (no silent export data loss)" {
         .name = "a",
         .value = token.Value{ .string = long_string },
         .type = .string,
+        .array_depth = 0,
         .mutable = false,
         .temp = false,
         .has_decl_prefix = false,
@@ -885,14 +947,19 @@ test "para language tests" {
     runner.runTest("JSON Grouping Test", testJsonGroupings);
     runner.runTest("JSON Big File Test", testJsonBigFile);
     runner.runTest("JSON Ordering Test", testJsonDeterministicOrdering);
+    runner.runTest("JSON Arrays Test", testJsonArrays);
     runner.runTest("ZON Grouping Test", testZonGroupings);
     runner.runTest("ZON Big File Test", testZonBigFile);
+    runner.runTest("ZON Arrays Test", testZonArrays);
     runner.runTest("YAML Grouping Test", testYamlGroupings);
     runner.runTest("YAML Big File Test", testYamlBigFile);
+    runner.runTest("YAML Arrays Test", testYamlArrays);
     runner.runTest("TOML Grouping Test", testTomlGroupings);
     runner.runTest("TOML Big File Test", testTomlBigFile);
+    runner.runTest("TOML Arrays Test", testTomlArrays);
     runner.runTest("RON Grouping Test", testRonGroupings);
     runner.runTest("RON Big File Test", testRonBigFile);
+    runner.runTest("RON Arrays Test", testRonArrays);
 
     runner.generateReport();
 

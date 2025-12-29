@@ -20,12 +20,27 @@ pub const ValueType = enum {
     }
 };
 
-pub const Value = union(ValueType) {
+pub const ValueKind = enum {
+    int,
+    float,
+    string,
+    bool,
+    time,
+    array,
+    nothing,
+};
+
+pub const Array = struct {
+    items: []Value,
+};
+
+pub const Value = union(ValueKind) {
     int: i64,
     float: f64,
     string: []const u8,
     bool: bool,
     time: i64,
+    array: Array,
     nothing: void,
 };
 

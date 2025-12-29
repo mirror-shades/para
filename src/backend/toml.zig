@@ -37,7 +37,7 @@ fn writeKeyValue(
     try escape.ensureValidUtf8(name);
     try writer.writeAll(name);
     try writer.writeAll(" = ");
-    try writeScalar(writer, value);
+    try writeValue(writer, value);
     try writer.writeByte('\n');
 }
 
@@ -98,7 +98,7 @@ fn buildChildPath(
     return child;
 }
 
-fn writeScalar(
+fn writeValue(
     writer: anytype,
     value: ir.Value,
 ) anyerror!void {
@@ -109,8 +109,28 @@ fn writeScalar(
         .time => |v| try std.fmt.format(writer, "{}", .{v}),
         .string => |s| try writeString(writer, s),
         .null_ => |_| try writer.writeAll("null"),
+        .array => |arr| try writeArray(writer, arr),
         .object => |_| return error.UnexpectedObject,
     }
+}
+
+fn writeArray(writer: anytype, arr: *const ir.Array) anyerror!void {
+    try writer.writeByte('[');
+
+    var first: bool = true;
+    for (arr.items.items) |item| {
+        if (!first) {
+            try writer.writeAll(", ");
+        }
+        first = false;
+
+        switch (item) {
+            .object => return error.UnexpectedObject,
+            else => try writeValue(writer, item),
+        }
+    }
+
+    try writer.writeByte(']');
 }
 
 fn writeString(writer: anytype, bytes: []const u8) anyerror!void {

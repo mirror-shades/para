@@ -44,8 +44,27 @@ fn writeValue(
         .time => |v| try std.fmt.format(writer, "{}", .{v}),
         .string => |s| try writeString(writer, s),
         .null_ => |_| try writer.writeAll("null"),
+        .array => |arr| try writeArray(writer, indent, arr),
         .object => |obj| try writeObject(writer, indent, obj),
     }
+}
+
+fn writeArray(
+    writer: anytype,
+    indent: usize,
+    arr: *const ir.Array,
+) anyerror!void {
+    try writer.writeAll(".{\n");
+
+    const next_indent = indent + 1;
+    for (arr.items.items) |item| {
+        try writeIndent(writer, next_indent);
+        try writeValue(writer, next_indent, item);
+        try writer.writeAll(",\n");
+    }
+
+    try writeIndent(writer, indent);
+    try writer.writeByte('}');
 }
 
 fn writeObject(

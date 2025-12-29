@@ -1,0 +1,8 @@
+// arrays (homogeneous, nestable)
+const empty: int[] = []
+const empty2: int[][] = []
+
+const xs: int[] = [1, 2, 3]
+const xss: int[][] = [[1, 2], [3]]
+
+const person.scores: int[] = [10, 20]

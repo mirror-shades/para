@@ -487,6 +487,21 @@ pub const Parser = struct {
                     });
                     continue;
                 },
+                .TKN_COMMA => {
+                    try self.parsed_tokens.append(self.allocator, ParsedToken{
+                        .token_type = .TKN_COMMA,
+                        .literal = current_token.literal,
+                        .expression = null,
+                        .value_type = .nothing,
+                        .value = .{ .nothing = {} },
+                        .line_number = current_token.line_number,
+                        .token_number = current_token.token_number,
+                        .is_mutable = false,
+                        .is_temporary = false,
+                        .has_decl_prefix = false,
+                    });
+                    continue;
+                },
                 .TKN_MINUS => {
                     try self.parsed_tokens.append(self.allocator, ParsedToken{
                         .token_type = .TKN_MINUS,

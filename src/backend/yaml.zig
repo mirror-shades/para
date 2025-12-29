@@ -28,6 +28,14 @@ fn writeBinding(
             try writer.writeAll(":\n");
             try writeObject(writer, indent + 1, obj);
         },
+        .array => |arr| {
+            if (arr.items.items.len == 0) {
+                try writer.writeAll(": []\n");
+            } else {
+                try writer.writeAll(":\n");
+                try writeArray(writer, indent + 1, arr);
+            }
+        },
         else => {
             try writer.writeAll(": ");
             try writeScalar(writer, value);
@@ -59,7 +67,39 @@ fn writeScalar(
         .time => |v| try std.fmt.format(writer, "{}", .{v}),
         .string => |s| try writeString(writer, s),
         .null_ => |_| try writer.writeAll("null"),
+        .array => |_| return error.UnexpectedArray,
         .object => |_| return error.UnexpectedObject,
+    }
+}
+
+fn writeArray(
+    writer: anytype,
+    indent: usize,
+    arr: *const ir.Array,
+) anyerror!void {
+    var i: usize = 0;
+    while (i < arr.items.items.len) : (i += 1) {
+        const item = arr.items.items[i];
+        try writeIndent(writer, indent);
+        switch (item) {
+            .object => |obj| {
+                try writer.writeAll("-\n");
+                try writeObject(writer, indent + 1, obj);
+            },
+            .array => |child| {
+                if (child.items.items.len == 0) {
+                    try writer.writeAll("- []\n");
+                } else {
+                    try writer.writeAll("-\n");
+                    try writeArray(writer, indent + 1, child);
+                }
+            },
+            else => {
+                try writer.writeAll("- ");
+                try writeScalar(writer, item);
+                try writer.writeByte('\n');
+            },
+        }
     }
 }
 

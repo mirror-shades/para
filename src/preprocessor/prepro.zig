@@ -12,7 +12,10 @@ pub const Preprocessor = struct {
     pub const Variable = struct {
         name: []const u8,
         value: Value,
+        /// Scalar base type (arrays use `array_depth` > 0)
         type: ValueType,
+        /// 0 for scalars, 1 for `T[]`, 2 for `T[][]`, etc.
+        array_depth: u8,
         mutable: bool,
         temp: bool,
         has_decl_prefix: bool,
@@ -124,13 +127,32 @@ pub const Preprocessor = struct {
     };
 
     fn valueToIrValue(allocator: std.mem.Allocator, variable: Variable) !ir.Value {
-        return switch (variable.type) {
-            .int => ir.Value{ .int = variable.value.int },
-            .float => ir.Value{ .float = variable.value.float },
-            .string => ir.Value{ .string = try allocator.dupe(u8, variable.value.string) },
-            .bool => ir.Value{ .bool = variable.value.bool },
-            .time => ir.Value{ .time = variable.value.time },
-            .nothing => ir.Value{ .null_ = {} },
+        return valueToIrValueFromTokenValue(allocator, variable.value);
+    }
+
+    fn valueToIrValueFromTokenValue(allocator: std.mem.Allocator, value: Value) !ir.Value {
+        return switch (value) {
+            .int => |v| ir.Value{ .int = v },
+            .float => |v| ir.Value{ .float = v },
+            .string => |s| ir.Value{ .string = try allocator.dupe(u8, s) },
+            .bool => |v| ir.Value{ .bool = v },
+            .time => |v| ir.Value{ .time = v },
+            .nothing => |_| ir.Value{ .null_ = {} },
+            .array => |arr| {
+                const arr_ptr = try allocator.create(ir.Array);
+                arr_ptr.* = ir.Array.init(allocator);
+                errdefer {
+                    arr_ptr.deinit(allocator);
+                    allocator.destroy(arr_ptr);
+                }
+
+                for (arr.items) |item| {
+                    const ir_item = try valueToIrValueFromTokenValue(allocator, item);
+                    try arr_ptr.items.append(allocator, ir_item);
+                }
+
+                return ir.Value{ .array = arr_ptr };
+            },
         };
     }
 
@@ -301,6 +323,7 @@ pub const Preprocessor = struct {
                     .name = t.literal,
                     .value = Value{ .nothing = {} },
                     .type = .nothing,
+                    .array_depth = 0,
                     .mutable = false,
                     .temp = false,
                     .has_decl_prefix = false,
@@ -324,14 +347,43 @@ pub const Preprocessor = struct {
 
         var lookup_found = false;
         if (index > 0) {
-            const id_pos: isize = @intCast(index - 1);
+            var scan: isize = @as(isize, @intCast(index)) - 1;
+            var declared_array_depth: u8 = 0;
 
-            if (tokens[@intCast(id_pos)].token_type == .TKN_IDENTIFIER) {
-                const id_tok = tokens[@intCast(id_pos)];
+            while (scan >= 1 and tokens[@intCast(scan)].token_type == .TKN_RBRACKET) : (scan -= 2) {
+                if (tokens[@intCast(scan - 1)].token_type != .TKN_LBRACKET) {
+                    if (self.source_lines.len > 0) {
+                        const t = tokens[@intCast(scan)];
+                        self.underlineAt(t.line_number, t.token_number, 1);
+                    }
+                    Reporting.throwError(
+                        "Invalid array type annotation (expected '[]') (line {d}, token {d})\n",
+                        .{ tokens[@intCast(scan)].line_number, tokens[@intCast(scan)].token_number },
+                    );
+                    return error.InvalidTypeAnnotation;
+                }
+                declared_array_depth += 1;
+            }
+
+            if (scan >= 0 and tokens[@intCast(scan)].token_type == .TKN_IDENTIFIER) {
+                if (declared_array_depth != 0) {
+                    if (self.source_lines.len > 0) {
+                        const t = tokens[@intCast(scan)];
+                        self.underlineAt(t.line_number, t.token_number, t.literal.len);
+                    }
+                    Reporting.throwError(
+                        "Array type annotation must include a base type (example: `x: int[] = ...`) (line {d}, token {d})\n",
+                        .{ tokens[@intCast(scan)].line_number, tokens[@intCast(scan)].token_number },
+                    );
+                    return error.InvalidTypeAnnotation;
+                }
+
+                const id_tok = tokens[@intCast(scan)];
                 try result.append(self.allocator, Variable{
                     .name = id_tok.literal,
                     .value = Value{ .nothing = {} },
                     .type = .nothing,
+                    .array_depth = 0,
                     .mutable = id_tok.is_mutable,
                     .temp = id_tok.is_temporary,
                     .has_decl_prefix = id_tok.has_decl_prefix,
@@ -339,15 +391,16 @@ pub const Preprocessor = struct {
                     .token_number = id_tok.token_number,
                 });
                 lookup_found = true;
-            } else if (id_pos > 0 and tokens[@intCast(id_pos)].token_type == .TKN_TYPE and
-                tokens[@intCast(id_pos - 1)].token_type == .TKN_IDENTIFIER)
+            } else if (scan >= 1 and tokens[@intCast(scan)].token_type == .TKN_TYPE and
+                tokens[@intCast(scan - 1)].token_type == .TKN_IDENTIFIER)
             {
-                const type_tok = tokens[@intCast(id_pos)];
-                const id_tok = tokens[@intCast(id_pos - 1)];
+                const type_tok = tokens[@intCast(scan)];
+                const id_tok = tokens[@intCast(scan - 1)];
                 try result.append(self.allocator, Variable{
                     .name = id_tok.literal,
                     .value = Value{ .nothing = {} },
                     .type = try valueTypeFromLiteral(type_tok.literal),
+                    .array_depth = declared_array_depth,
                     .mutable = id_tok.is_mutable,
                     .temp = id_tok.is_temporary,
                     .has_decl_prefix = id_tok.has_decl_prefix,
@@ -378,6 +431,7 @@ pub const Preprocessor = struct {
                 .name = "value",
                 .value = Value{ .int = 12 }, // Default for expressions for now
                 .type = .int,
+                .array_depth = 0,
                 .mutable = false,
                 .temp = false,
                 .has_decl_prefix = false,
@@ -392,11 +446,45 @@ pub const Preprocessor = struct {
                 .name = "value",
                 .value = val_tok.value,
                 .type = val_tok.value_type,
+                .array_depth = 0,
                 .mutable = identifier.mutable,
                 .temp = val_tok.is_temporary,
                 .has_decl_prefix = false,
                 .line_number = val_tok.line_number,
                 .token_number = val_tok.token_number,
+            });
+            value_found = true;
+        } else if (index + 1 < tokens.len and tokens[index + 1].token_type == .TKN_LBRACKET) {
+            const identifier = result.items[result.items.len - 1];
+            const expected: ?TypeInfo = if (identifier.type != .nothing and identifier.array_depth > 0)
+                .{ .base = identifier.type, .depth = identifier.array_depth }
+            else
+                null;
+
+            const parsed = try self.parseArrayLiteral(tokens, index + 1, expected);
+
+            if (parsed.type_info.base == .nothing) {
+                if (self.source_lines.len > 0) {
+                    const t = tokens[index + 1];
+                    self.underlineAt(t.line_number, t.token_number, 1);
+                }
+                Reporting.throwError(
+                    "Cannot infer array element type from an empty array literal (add an explicit type annotation)\n",
+                    .{},
+                );
+                return error.TypeAnnotationRequired;
+            }
+
+            try result.append(self.allocator, Variable{
+                .name = "value",
+                .value = parsed.value,
+                .type = parsed.type_info.base,
+                .array_depth = parsed.type_info.depth,
+                .mutable = identifier.mutable,
+                .temp = false,
+                .has_decl_prefix = false,
+                .line_number = tokens[index + 1].line_number,
+                .token_number = tokens[index + 1].token_number,
             });
             value_found = true;
         } else if (index + 1 < tokens.len and (tokens[index + 1].token_type == .TKN_IDENTIFIER or
@@ -477,6 +565,212 @@ pub const Preprocessor = struct {
         return array;
     }
 
+    const TypeInfo = struct {
+        base: ValueType,
+        depth: u8,
+    };
+
+    const ParsedArrayLiteral = struct {
+        value: Value,
+        type_info: TypeInfo,
+        end_index: usize,
+    };
+
+    fn parseArrayLiteral(self: *Preprocessor, tokens: []ParsedToken, start_index: usize, expected: ?TypeInfo) !ParsedArrayLiteral {
+        if (start_index >= tokens.len or tokens[start_index].token_type != .TKN_LBRACKET) {
+            return error.InvalidArrayLiteral;
+        }
+
+        var items: std.ArrayList(Value) = .empty;
+        defer items.deinit(self.allocator);
+
+        var element_base: ValueType = .nothing;
+        var element_depth: u8 = 0;
+        var saw_any_element = false;
+
+        var expect_value = true;
+        var i: usize = start_index + 1;
+        while (i < tokens.len) {
+            const t = tokens[i];
+            switch (t.token_type) {
+                .TKN_NEWLINE => {
+                    i += 1;
+                    continue;
+                },
+                .TKN_COMMA => {
+                    if (expect_value) {
+                        if (self.source_lines.len > 0) {
+                            self.underlineAt(t.line_number, t.token_number, 1);
+                        }
+                        Reporting.throwError(
+                            "Unexpected ',' in array literal (line {d}, token {d})\n",
+                            .{ t.line_number, t.token_number },
+                        );
+                        return error.InvalidArrayLiteral;
+                    }
+                    expect_value = true;
+                    i += 1;
+                    continue;
+                },
+                .TKN_RBRACKET => {
+                    // Allow trailing comma.
+                    break;
+                },
+                .TKN_LBRACKET => {
+                    if (!expect_value) {
+                        if (self.source_lines.len > 0) {
+                            self.underlineAt(t.line_number, t.token_number, 1);
+                        }
+                        Reporting.throwError(
+                            "Missing ',' between array elements (line {d}, token {d})\n",
+                            .{ t.line_number, t.token_number },
+                        );
+                        return error.InvalidArrayLiteral;
+                    }
+
+                    const child_expected: ?TypeInfo = if (expected) |exp| blk: {
+                        if (exp.depth == 0) break :blk null;
+                        if (exp.depth == 1) break :blk null;
+                        break :blk .{ .base = exp.base, .depth = exp.depth - 1 };
+                    } else null;
+
+                    const child = try self.parseArrayLiteral(tokens, i, child_expected);
+                    i = child.end_index + 1;
+
+                    const child_base = child.type_info.base;
+                    const child_depth = child.type_info.depth;
+
+                    if (!saw_any_element) {
+                        element_base = child_base;
+                        element_depth = child_depth;
+                        saw_any_element = true;
+                    } else {
+                        if (child_depth != element_depth) {
+                            if (self.source_lines.len > 0) {
+                                self.underlineAt(t.line_number, t.token_number, 1);
+                            }
+                            Reporting.throwError(
+                                "Array literal elements must have the same nesting depth (line {d}, token {d})\n",
+                                .{ t.line_number, t.token_number },
+                            );
+                            return error.InvalidArrayLiteral;
+                        }
+                        if (element_base == .nothing and child_base != .nothing) {
+                            element_base = child_base;
+                        } else if (child_base != .nothing and element_base != child_base) {
+                            if (self.source_lines.len > 0) {
+                                self.underlineAt(t.line_number, t.token_number, 1);
+                            }
+                            Reporting.throwError(
+                                "Array literal elements must have the same type (line {d}, token {d})\n",
+                                .{ t.line_number, t.token_number },
+                            );
+                            return error.InvalidArrayLiteral;
+                        }
+                    }
+
+                    try items.append(self.allocator, child.value);
+                    expect_value = false;
+                    continue;
+                },
+                .TKN_VALUE => {
+                    if (!expect_value) {
+                        if (self.source_lines.len > 0) {
+                            self.underlineAt(t.line_number, t.token_number, 1);
+                        }
+                        Reporting.throwError(
+                            "Missing ',' between array elements (line {d}, token {d})\n",
+                            .{ t.line_number, t.token_number },
+                        );
+                        return error.InvalidArrayLiteral;
+                    }
+
+                    if (!saw_any_element) {
+                        element_base = t.value_type;
+                        element_depth = 0;
+                        saw_any_element = true;
+                    } else {
+                        if (element_depth != 0) {
+                            if (self.source_lines.len > 0) {
+                                self.underlineAt(t.line_number, t.token_number, 1);
+                            }
+                            Reporting.throwError(
+                                "Array literal cannot mix nested arrays and scalar values (line {d}, token {d})\n",
+                                .{ t.line_number, t.token_number },
+                            );
+                            return error.InvalidArrayLiteral;
+                        }
+                        if (element_base == .nothing) {
+                            element_base = t.value_type;
+                        } else if (element_base != t.value_type) {
+                            if (self.source_lines.len > 0) {
+                                self.underlineAt(t.line_number, t.token_number, 1);
+                            }
+                            Reporting.throwError(
+                                "Array literal elements must have the same type (line {d}, token {d})\n",
+                                .{ t.line_number, t.token_number },
+                            );
+                            return error.InvalidArrayLiteral;
+                        }
+                    }
+
+                    try items.append(self.allocator, t.value);
+                    expect_value = false;
+                    i += 1;
+                    continue;
+                },
+                else => {
+                    if (self.source_lines.len > 0) {
+                        self.underlineAt(t.line_number, t.token_number, @max(@as(usize, 1), t.literal.len));
+                    }
+                    Reporting.throwError(
+                        "Unexpected token in array literal: {s} (line {d}, token {d})\n",
+                        .{ t.token_type.toString(), t.line_number, t.token_number },
+                    );
+                    return error.InvalidArrayLiteral;
+                },
+            }
+        }
+
+        if (i >= tokens.len or tokens[i].token_type != .TKN_RBRACKET) {
+            if (self.source_lines.len > 0) {
+                const t = tokens[start_index];
+                self.underlineAt(t.line_number, t.token_number, 1);
+            }
+            Reporting.throwError(
+                "Unterminated array literal (line {d}, token {d})\n",
+                .{ tokens[start_index].line_number, tokens[start_index].token_number },
+            );
+            return error.UnterminatedArrayLiteral;
+        }
+
+        // Materialize array items into an owned slice.
+        const item_slice = try self.allocator.alloc(Value, items.items.len);
+        for (items.items, 0..) |it, idx| item_slice[idx] = it;
+
+        // Determine the array type.
+        var inferred_base: ValueType = if (saw_any_element) element_base else .nothing;
+        var inferred_depth: u8 = if (saw_any_element) element_depth + 1 else 1;
+
+        if (!saw_any_element) {
+            if (expected) |exp| {
+                inferred_base = exp.base;
+                inferred_depth = exp.depth;
+            }
+        } else if (expected) |exp| {
+            // Allow the explicit type to resolve unknown bases coming from empty nested arrays.
+            if (inferred_base == .nothing and exp.base != .nothing) {
+                inferred_base = exp.base;
+            }
+        }
+
+        return .{
+            .value = Value{ .array = .{ .items = item_slice } },
+            .type_info = .{ .base = inferred_base, .depth = inferred_depth },
+            .end_index = i,
+        };
+    }
+
     pub fn getLookupValue(self: *Preprocessor, path: [][]const u8) !?Variable {
         if (path.len < 1) return error.InvalidLookupPath;
 
@@ -536,17 +830,14 @@ pub const Preprocessor = struct {
 
         const target_scope = try self.getTargetScope(groups);
 
-        // Step 1: Determine if we have an explicit type declaration
+        // Step 1: Determine the declared type for this assignment.
+        // - Existing variables keep their original type.
+        // - New variables either use an explicit type annotation (if provided), or infer from the value.
         const has_explicit_type = identifier.type != .nothing;
-        const declared_type = if (has_explicit_type) identifier.type else value_item.type;
+        var declared_type: ValueType = if (has_explicit_type) identifier.type else value_item.type;
+        var declared_array_depth: u8 = if (has_explicit_type) identifier.array_depth else value_item.array_depth;
         var final_mutable = identifier.mutable;
         var final_temp = identifier.temp;
-
-        // Coerce values for certain declared types (e.g. `time` accepts ISO strings).
-        if (has_explicit_type) {
-            const coerced = try coerceValueToType(self, declared_type, value_item);
-            value_item = coerced;
-        }
 
         // Step 2: Check if variable already exists
         if (target_scope.variables.get(identifier.name)) |existing_var| {
@@ -574,13 +865,22 @@ pub const Preprocessor = struct {
                 return error.ImmutableVariable;
             }
 
-            if (!isTypeCompatible(existing_var.type, value_item.type)) {
+            // Existing variables keep their original type, and coercion is done against it.
+            declared_type = existing_var.type;
+            declared_array_depth = existing_var.array_depth;
+            value_item = try coerceValueToType(self, declared_type, declared_array_depth, value_item);
+
+            if (!isTypeCompatible(declared_type, declared_array_depth, value_item.type, value_item.array_depth)) {
                 if (self.source_lines.len > 0) {
                     self.underlineAt(identifier.line_number, identifier.token_number, identifier.name.len);
                 }
+                var rhs_buf: [64]u8 = undefined;
+                var lhs_buf: [64]u8 = undefined;
+                const rhs_type_str = formatType(&rhs_buf, value_item.type, value_item.array_depth);
+                const lhs_type_str = formatType(&lhs_buf, declared_type, declared_array_depth);
                 Reporting.throwError(
                     "Cannot assign {s} value to variable '{s}' of type {s} (line {d}, token {d})\n",
-                    .{ value_item.type.toString(), identifier.name, existing_var.type.toString(), identifier.line_number, identifier.token_number },
+                    .{ rhs_type_str, identifier.name, lhs_type_str, identifier.line_number, identifier.token_number },
                 );
                 return error.TypeMismatch;
             }
@@ -589,15 +889,33 @@ pub const Preprocessor = struct {
             final_mutable = existing_var.mutable;
             final_temp = existing_var.temp;
         } else {
+            // New variables: coerce against an explicit declared type if present.
+            if (has_explicit_type) {
+                value_item = try coerceValueToType(self, declared_type, declared_array_depth, value_item);
+            } else if (declared_type == .nothing) {
+                if (self.source_lines.len > 0) {
+                    self.underlineAt(identifier.line_number, identifier.token_number, identifier.name.len);
+                }
+                Reporting.throwError(
+                    "Cannot infer type for '{s}' (add an explicit type annotation)\n",
+                    .{identifier.name},
+                );
+                return error.TypeAnnotationRequired;
+            }
+
             // Step 3: For new variables, handle type checking/inference
             if (has_explicit_type) {
-                if (!isTypeCompatible(declared_type, value_item.type)) {
+                if (!isTypeCompatible(declared_type, declared_array_depth, value_item.type, value_item.array_depth)) {
                     if (self.source_lines.len > 0) {
                         self.underlineAt(identifier.line_number, identifier.token_number, identifier.name.len);
                     }
+                    var decl_buf: [64]u8 = undefined;
+                    var val_buf: [64]u8 = undefined;
+                    const decl_type_str = formatType(&decl_buf, declared_type, declared_array_depth);
+                    const val_type_str = formatType(&val_buf, value_item.type, value_item.array_depth);
                     Reporting.throwError(
                         "Cannot initialize {s} variable '{s}' with {s} value (line {d}, token {d})\n",
-                        .{ declared_type.toString(), identifier.name, value_item.type.toString(), identifier.line_number, identifier.token_number },
+                        .{ decl_type_str, identifier.name, val_type_str, identifier.line_number, identifier.token_number },
                     );
                     return error.TypeMismatch;
                 }
@@ -609,6 +927,7 @@ pub const Preprocessor = struct {
             .name = identifier.name,
             .value = value_item.value,
             .type = declared_type,
+            .array_depth = declared_array_depth,
             .mutable = final_mutable,
             .temp = final_temp,
             .has_decl_prefix = identifier.has_decl_prefix,
@@ -872,7 +1191,7 @@ pub const Preprocessor = struct {
                             use_float = true;
                             a_float = val;
                         },
-                        .string, .bool, .nothing => {
+                        .string, .bool, .array, .nothing => {
                             if (self.source_lines.len > 0) {
                                 self.underlineAt(token.line_number, token.token_number, token.literal.len);
                             }
@@ -894,7 +1213,7 @@ pub const Preprocessor = struct {
                             use_float = true;
                             b_float = val;
                         },
-                        .string, .bool, .nothing => {
+                        .string, .bool, .array, .nothing => {
                             if (self.source_lines.len > 0) {
                                 self.underlineAt(token.line_number, token.token_number, token.literal.len);
                             }
@@ -1026,8 +1345,10 @@ pub const Preprocessor = struct {
                                     .string => .string,
                                     .bool => .bool,
                                     .time => .time,
+                                    .array => .nothing,
                                     .nothing => .nothing,
                                 };
+                                modified_assignment[modified_assignment.len - 1].array_depth = 0;
 
                                 try self.assignValue(modified_assignment);
                             } else {
@@ -1087,20 +1408,29 @@ pub const Preprocessor = struct {
                         defer self.allocator.free(path_str);
 
                         if (try self.getLookupValue(path)) |var_value| {
+                            var type_buf: [64]u8 = undefined;
+                            const type_str = formatType(&type_buf, var_value.type, var_value.array_depth);
                             Reporting.log("[{d}:{d}] {s} :{s} = ", .{
                                 current_token.line_number,
                                 current_token.token_number,
                                 path_str,
-                                var_value.type.toString(),
+                                type_str,
                             });
 
-                            switch (var_value.type) {
-                                .int => Reporting.log("{d}\n", .{var_value.value.int}),
-                                .float => Reporting.log("{any}\n", .{var_value.value.float}),
-                                .string => Reporting.log("\"{s}\"\n", .{var_value.value.string}),
-                                .bool => Reporting.log("{s}\n", .{if (var_value.value.bool) "TRUE" else "FALSE"}),
-                                .time => Reporting.log("{d}\n", .{var_value.value.time}),
-                                .nothing => Reporting.log("(nothing)\n", .{}),
+                            if (var_value.array_depth > 0) {
+                                switch (var_value.value) {
+                                    .array => |arr| Reporting.log("<array len={d}>\n", .{arr.items.len}),
+                                    else => Reporting.log("<array>\n", .{}),
+                                }
+                            } else {
+                                switch (var_value.type) {
+                                    .int => Reporting.log("{d}\n", .{var_value.value.int}),
+                                    .float => Reporting.log("{any}\n", .{var_value.value.float}),
+                                    .string => Reporting.log("\"{s}\"\n", .{var_value.value.string}),
+                                    .bool => Reporting.log("{s}\n", .{if (var_value.value.bool) "TRUE" else "FALSE"}),
+                                    .time => Reporting.log("{d}\n", .{var_value.value.time}),
+                                    .nothing => Reporting.log("(nothing)\n", .{}),
+                                }
                             }
                         } else {
                             if (self.source_lines.len > 0) {
@@ -1174,10 +1504,16 @@ pub const Preprocessor = struct {
 
         Reporting.log("|----------------------------------------|\n", .{});
         Reporting.log("| {s}\n", .{full_name});
-        Reporting.log("| Type: {s}\n", .{var_value.type.toString()});
+        var type_buf: [64]u8 = undefined;
+        Reporting.log("| Type: {s}\n", .{formatType(&type_buf, var_value.type, var_value.array_depth)});
 
         Reporting.log("| Value: ", .{});
-        switch (var_value.type) {
+        if (var_value.array_depth > 0) {
+            switch (var_value.value) {
+                .array => |arr| Reporting.log("<array len={d}>", .{arr.items.len}),
+                else => Reporting.log("<array>", .{}),
+            }
+        } else switch (var_value.type) {
             .int => Reporting.log("{d}", .{var_value.value.int}),
             .float => Reporting.log("{d:.2}", .{var_value.value.float}),
             .string => Reporting.log("\"{s}\"", .{var_value.value.string}),
@@ -1276,41 +1612,103 @@ fn valueTypeFromLiteral(lit: []const u8) !ValueType {
     return error.UnknownType;
 }
 
-fn coerceValueToType(self: *Preprocessor, declared_type: ValueType, value_item: Preprocessor.Variable) !Preprocessor.Variable {
+fn coerceValueToType(self: *Preprocessor, declared_type: ValueType, declared_array_depth: u8, value_item: Preprocessor.Variable) !Preprocessor.Variable {
     var out = value_item;
-    switch (declared_type) {
-        .time => {
-            switch (value_item.type) {
-                .time => return out,
-                .int => {
-                    out.value = Value{ .time = value_item.value.int };
-                    out.type = .time;
-                    return out;
-                },
-                .string => {
-                    const millis = parseTimeToUnixMillis(value_item.value.string) catch {
+    if (declared_array_depth == 0) {
+        if (value_item.array_depth != 0) return error.TypeMismatch;
+        switch (declared_type) {
+            .time => {
+                switch (value_item.type) {
+                    .time => return out,
+                    .int => {
+                        out.value = Value{ .time = value_item.value.int };
+                        out.type = .time;
+                        out.array_depth = 0;
+                        return out;
+                    },
+                    .string => {
+                        const millis = parseTimeToUnixMillis(value_item.value.string) catch {
+                            if (self.source_lines.len > 0) {
+                                self.underlineAt(value_item.line_number, value_item.token_number, @max(@as(usize, 1), value_item.value.string.len));
+                            }
+                            Reporting.throwError(
+                                "Invalid time literal (expected epoch-millis integer or ISO-8601 string) (line {d}, token {d})\n",
+                                .{ value_item.line_number, value_item.token_number },
+                            );
+                            return error.InvalidTime;
+                        };
+                        out.value = Value{ .time = millis };
+                        out.type = .time;
+                        out.array_depth = 0;
+                        return out;
+                    },
+                    else => {
                         if (self.source_lines.len > 0) {
-                            self.underlineAt(value_item.line_number, value_item.token_number, @max(@as(usize, 1), value_item.value.string.len));
+                            self.underlineAt(value_item.line_number, value_item.token_number, 1);
+                        }
+                        return error.TypeMismatch;
+                    },
+                }
+            },
+            else => return out,
+        }
+    }
+
+    // Arrays: currently only `time` has coercions (e.g. `time[] = ["2024-03-14", 1710434700000]`).
+    if (value_item.array_depth != declared_array_depth) return error.TypeMismatch;
+    if (declared_type != .time) return out;
+
+    switch (out.value) {
+        .array => |arr| {
+            const values = arr.items;
+            coerceTimeArrayRecursive(self, values, declared_array_depth) catch |e| {
+                switch (e) {
+                    error.InvalidTime => {
+                        if (self.source_lines.len > 0) {
+                            self.underlineAt(value_item.line_number, value_item.token_number, 1);
                         }
                         Reporting.throwError(
-                            "Invalid time literal (expected epoch-millis integer or ISO-8601 string) (line {d}, token {d})\n",
+                            "Invalid time literal in array (expected epoch-millis integer or ISO-8601 string) (line {d}, token {d})\n",
                             .{ value_item.line_number, value_item.token_number },
                         );
                         return error.InvalidTime;
-                    };
-                    out.value = Value{ .time = millis };
-                    out.type = .time;
-                    return out;
-                },
-                else => {
-                    if (self.source_lines.len > 0) {
-                        self.underlineAt(value_item.line_number, value_item.token_number, 1);
-                    }
-                    return error.TypeMismatch;
-                },
-            }
+                    },
+                    else => return e,
+                }
+            };
+            out.type = .time;
+            out.array_depth = declared_array_depth;
+            return out;
         },
-        else => return out,
+        else => return error.TypeMismatch,
+    }
+}
+
+fn coerceTimeArrayRecursive(self: *Preprocessor, items: []Value, remaining_depth: u8) !void {
+    if (remaining_depth == 0) return error.TypeMismatch;
+
+    if (remaining_depth == 1) {
+        for (items) |*v| {
+            switch (v.*) {
+                .time => {},
+                .int => |n| v.* = Value{ .time = n },
+                .string => |s| {
+                    const millis = parseTimeToUnixMillis(s) catch {
+                        return error.InvalidTime;
+                    };
+                    v.* = Value{ .time = millis };
+                },
+                else => return error.TypeMismatch,
+            }
+        }
+        return;
+    }
+
+    for (items) |*v| {
+        switch (v.*) {
+            .array => |child| try coerceTimeArrayRecursive(self, child.items, remaining_depth - 1),
+            else => return error.TypeMismatch,
+        }
     }
 }
 
@@ -1480,13 +1878,19 @@ fn daysFromCivil(year_in: i64, month_in: i64, day_in: i64) i64 {
     return era * 146097 + doe - 719468;
 }
 
-fn isTypeCompatible(expected: ValueType, actual: ValueType) bool {
-    return switch (expected) {
-        .int => actual == .int,
-        .float => actual == .float,
-        .string => actual == .string,
-        .bool => actual == .bool,
-        .time => actual == .time or actual == .int,
-        .nothing => true, // nothing type can be assigned to anything
-    };
+fn formatType(buf: []u8, base: ValueType, depth: u8) []const u8 {
+    var fbs = std.io.fixedBufferStream(buf);
+    const w = fbs.writer();
+    const base_str = if (base == .nothing) "unknown" else base.toString();
+    w.writeAll(base_str) catch {};
+    for (0..depth) |_| {
+        w.writeAll("[]") catch {};
+    }
+    return fbs.getWritten();
+}
+
+fn isTypeCompatible(expected_base: ValueType, expected_depth: u8, actual_base: ValueType, actual_depth: u8) bool {
+    if (expected_base == .nothing) return true;
+    if (actual_base == .nothing) return false;
+    return expected_base == actual_base and expected_depth == actual_depth;
 }

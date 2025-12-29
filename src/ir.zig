@@ -7,6 +7,7 @@ pub const ValueKind = enum {
     string,
     time,
     null_,
+    array,
     object,
 };
 
@@ -28,6 +29,19 @@ pub const Object = struct {
     }
 };
 
+pub const Array = struct {
+    items: std.ArrayList(Value),
+
+    pub fn init(allocator: std.mem.Allocator) Array {
+        _ = allocator;
+        return .{ .items = .empty };
+    }
+
+    pub fn deinit(self: *Array, allocator: std.mem.Allocator) void {
+        self.items.deinit(allocator);
+    }
+};
+
 pub const Value = union(ValueKind) {
     int: i64,
     float: f64,
@@ -35,6 +49,7 @@ pub const Value = union(ValueKind) {
     string: []const u8,
     time: i64,
     null_: void,
+    array: *Array,
     object: *Object,
 };
 
