@@ -5,7 +5,7 @@
 
 # Para Language Documentation
 
-Para is a minimalist data representation language designed for clear, typed data structures. It allows you to write your config in a more programmatic style, then convert it to the serialization language of your choice. Current output formats are: JSON, YAML, TOML, ZON, RON.
+Para is a data representation language designed to produce clear, statically typed data structures. It allows you to write your config in a more programmatic style, then convert it to the serialization language of your choice. Current output formats are: JSON, YAML, TOML, ZON, RON.
 
 NOTE: This project is still in early development and should not be relied on in production databases.
 
@@ -75,15 +75,6 @@ const timeout = 30
 
 const percentage = 85
 # assert percentage >= 0 and percentage <= 100  // Valid percentage
-```
-
-### Logical Operations
-
-Basic logical negation is supported:
-
-```para
-const flag = true
-const inverted = !flag  // false
 ```
 
 ## Syntax Rules
