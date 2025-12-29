@@ -77,15 +77,6 @@ const percentage = 85
 # assert percentage >= 0 and percentage <= 100  // Valid percentage
 ```
 
-### Logical Operations
-
-Basic logical negation is supported:
-
-```para
-const flag = true
-const inverted = !flag  // false
-```
-
 ## Syntax Rules
 
 - Variables are declared with `:` followed by a type and `=` followed by a value or expression.
