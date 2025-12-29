@@ -13,7 +13,7 @@ const yaml_backend = para_src.yaml_backend;
 const toml_backend = para_src.toml_backend;
 const zon_backend = para_src.zon_backend;
 
-const TEST_TOTAL = 26;
+const TEST_TOTAL = 27;
 
 fn print(comptime format: []const u8) void {
     printf(format, .{});
@@ -781,6 +781,92 @@ fn testDivisionOperator(allocator: std.mem.Allocator) !void {
     try testing.expectEqualStrings("3", outputs.items[0].value);
 }
 
+fn testLogicalExpressions(allocator: std.mem.Allocator) !void {
+    const output = try runParaCommand(allocator, "./test/suite/logical_expressions.para");
+    defer allocator.free(output);
+
+    var outputs = try parseOutput(output, allocator);
+    defer outputs.deinit(allocator);
+
+    // Integer comparisons
+    try testing.expectEqualStrings("int_lt", outputs.items[0].name);
+    try testing.expectEqualStrings("bool", outputs.items[0].type);
+    try testing.expectEqualStrings("TRUE", outputs.items[0].value);
+
+    try testing.expectEqualStrings("int_gt", outputs.items[1].name);
+    try testing.expectEqualStrings("bool", outputs.items[1].type);
+    try testing.expectEqualStrings("FALSE", outputs.items[1].value);
+
+    try testing.expectEqualStrings("int_eq", outputs.items[2].name);
+    try testing.expectEqualStrings("bool", outputs.items[2].type);
+    try testing.expectEqualStrings("TRUE", outputs.items[2].value);
+
+    try testing.expectEqualStrings("int_neq", outputs.items[3].name);
+    try testing.expectEqualStrings("bool", outputs.items[3].type);
+    try testing.expectEqualStrings("TRUE", outputs.items[3].value);
+
+    try testing.expectEqualStrings("int_lte", outputs.items[4].name);
+    try testing.expectEqualStrings("bool", outputs.items[4].type);
+    try testing.expectEqualStrings("TRUE", outputs.items[4].value);
+
+    try testing.expectEqualStrings("int_gte", outputs.items[5].name);
+    try testing.expectEqualStrings("bool", outputs.items[5].type);
+    try testing.expectEqualStrings("TRUE", outputs.items[5].value);
+
+    // Float comparisons
+    try testing.expectEqualStrings("float_lt", outputs.items[6].name);
+    try testing.expectEqualStrings("bool", outputs.items[6].type);
+    try testing.expectEqualStrings("TRUE", outputs.items[6].value);
+
+    try testing.expectEqualStrings("float_gt", outputs.items[7].name);
+    try testing.expectEqualStrings("bool", outputs.items[7].type);
+    try testing.expectEqualStrings("TRUE", outputs.items[7].value);
+
+    try testing.expectEqualStrings("float_eq", outputs.items[8].name);
+    try testing.expectEqualStrings("bool", outputs.items[8].type);
+    try testing.expectEqualStrings("TRUE", outputs.items[8].value);
+
+    try testing.expectEqualStrings("float_neq", outputs.items[9].name);
+    try testing.expectEqualStrings("bool", outputs.items[9].type);
+    try testing.expectEqualStrings("TRUE", outputs.items[9].value);
+
+    // String comparisons
+    try testing.expectEqualStrings("str_eq", outputs.items[10].name);
+    try testing.expectEqualStrings("bool", outputs.items[10].type);
+    try testing.expectEqualStrings("TRUE", outputs.items[10].value);
+
+    try testing.expectEqualStrings("str_neq", outputs.items[11].name);
+    try testing.expectEqualStrings("bool", outputs.items[11].type);
+    try testing.expectEqualStrings("TRUE", outputs.items[11].value);
+
+    // Bool comparisons
+    try testing.expectEqualStrings("bool_eq", outputs.items[12].name);
+    try testing.expectEqualStrings("bool", outputs.items[12].type);
+    try testing.expectEqualStrings("TRUE", outputs.items[12].value);
+
+    try testing.expectEqualStrings("bool_neq", outputs.items[13].name);
+    try testing.expectEqualStrings("bool", outputs.items[13].type);
+    try testing.expectEqualStrings("TRUE", outputs.items[13].value);
+
+    // Logical NOT
+    try testing.expectEqualStrings("not_true", outputs.items[14].name);
+    try testing.expectEqualStrings("bool", outputs.items[14].type);
+    try testing.expectEqualStrings("TRUE", outputs.items[14].value);
+
+    try testing.expectEqualStrings("not_false", outputs.items[15].name);
+    try testing.expectEqualStrings("bool", outputs.items[15].type);
+    try testing.expectEqualStrings("FALSE", outputs.items[15].value);
+
+    // Mixed type comparisons
+    try testing.expectEqualStrings("mixed_int", outputs.items[16].name);
+    try testing.expectEqualStrings("bool", outputs.items[16].type);
+    try testing.expectEqualStrings("FALSE", outputs.items[16].value);
+
+    try testing.expectEqualStrings("mixed_float", outputs.items[17].name);
+    try testing.expectEqualStrings("bool", outputs.items[17].type);
+    try testing.expectEqualStrings("FALSE", outputs.items[17].value);
+}
+
 fn testUnterminatedMultilineCommentFails(allocator: std.mem.Allocator) !void {
     const output = try runParaCommandExpectFailure(allocator, "./test/suite/unterminated_comment.para");
     defer allocator.free(output);
@@ -942,6 +1028,7 @@ test "para language tests" {
     runner.runTest("Time Type Test", testTimeType);
     runner.runTest("Invalid Time Test", testTimeTypeInvalid);
     runner.runTest("Division Operator", testDivisionOperator);
+    runner.runTest("Logical Expressions", testLogicalExpressions);
     runner.runTest("Unterminated /* */", testUnterminatedMultilineCommentFails);
     runner.runTest("Int Overflow Test", testIntegerOverflowLiteralFails);
     runner.runTest("JSON Grouping Test", testJsonGroupings);

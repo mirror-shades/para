@@ -1,0 +1,57 @@
+const x = 5
+const y = 10
+const z = 5.5
+const w = 10.5
+const name1 = "hello"
+const name2 = "world"
+const flag1 = true
+const flag2 = false
+
+# Integer comparisons
+const int_lt = x < y
+const int_gt = x > y
+const int_eq = x == 5
+const int_neq = x != y
+const int_lte = x <= 5
+const int_gte = y >= 10
+
+# Float comparisons
+const float_lt = z < w
+const float_gt = w > z
+const float_eq = z == 5.5
+const float_neq = z != w
+
+# String comparisons
+const str_eq = name1 == "hello"
+const str_neq = name1 != name2
+
+# Bool comparisons
+const bool_eq = flag1 == true
+const bool_neq = flag1 != flag2
+
+# Logical NOT
+const not_true = !flag2
+const not_false = !flag1
+
+# Mixed type comparisons (should work for same types)
+const mixed_int = x == y
+const mixed_float = z == w
+
+int_lt?
+int_gt?
+int_eq?
+int_neq?
+int_lte?
+int_gte?
+float_lt?
+float_gt?
+float_eq?
+float_neq?
+str_eq?
+str_neq?
+bool_eq?
+bool_neq?
+not_true?
+not_false?
+mixed_int?
+mixed_float?

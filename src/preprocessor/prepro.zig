@@ -1088,7 +1088,7 @@ pub const Preprocessor = struct {
                     const value: Value = switch (token.value_type) {
                         .int => Value{ .int = std.fmt.parseInt(i64, token.literal, 10) catch 0 },
                         .float => Value{ .float = std.fmt.parseFloat(f64, token.literal) catch 0 },
-                        .string => Value{ .string = token.literal },
+                        .string => Value{ .string = parseStringFromLiteral(token.literal) },
                         .bool => Value{ .bool = std.mem.eql(u8, token.literal, "true") },
                         .time => Value{ .time = std.fmt.parseInt(i64, token.literal, 10) catch 0 },
                         .nothing => Value{ .nothing = {} },
@@ -1463,6 +1463,13 @@ pub const Preprocessor = struct {
             Reporting.throwError("Empty expression result (line {d}, token {d})\n", .{ tokens[0].line_number, tokens[0].token_number });
             return Value{ .int = 0 };
         }
+    }
+
+    fn parseStringFromLiteral(literal: []const u8) []const u8 {
+        if (literal.len >= 2 and literal[0] == '"' and literal[literal.len - 1] == '"') {
+            return literal[1 .. literal.len - 1];
+        }
+        return literal;
     }
 
     fn underlineAt(self: *Preprocessor, line_number: usize, token_number: usize, span_len: usize) void {
