@@ -1,0 +1,3 @@
+const env1: env = "production"
+const invalid_gt = env1 > "production"
+

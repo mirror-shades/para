@@ -1,0 +1,34 @@
+const env1: env = "production"
+const env2: env = "development"
+
+# Env to string comparisons
+const env_eq_string_true = env1 == "production"
+const env_eq_string_false = env1 == "development"
+const env_neq_string_true = env1 != "development"
+const env_neq_string_false = env1 != "production"
+
+# Env to env comparisons
+const env_eq_env_true = env1 == env1
+const env_eq_env_false = env1 == env2
+const env_neq_env_true = env1 != env2
+const env_neq_env_false = env1 != env1
+
+# String to env comparisons (reverse direction)
+const string_eq_env_true = "production" == env1
+const string_eq_env_false = "development" == env1
+const string_neq_env_true = "development" != env1
+const string_neq_env_false = "production" != env1
+
+env_eq_string_true?
+env_eq_string_false?
+env_neq_string_true?
+env_neq_string_false?
+env_eq_env_true?
+env_eq_env_false?
+env_neq_env_true?
+env_neq_env_false?
+string_eq_env_true?
+string_eq_env_false?
+string_neq_env_true?
+string_neq_env_false?
+

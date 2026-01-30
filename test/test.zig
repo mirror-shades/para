@@ -13,7 +13,7 @@ const yaml_backend = para_src.yaml_backend;
 const toml_backend = para_src.toml_backend;
 const zon_backend = para_src.zon_backend;
 
-const TEST_TOTAL = 35;
+const TEST_TOTAL = 37;
 
 fn print(comptime format: []const u8) void {
     printf(format, .{});
@@ -632,6 +632,71 @@ fn testEnvDefaultValue(allocator: std.mem.Allocator) !void {
     try testing.expectEqualStrings("\"default\"", outputs.items[0].value);
 }
 
+fn testEnvComparisons(allocator: std.mem.Allocator) !void {
+    const output = try runParaCommand(allocator, "./test/suite/env_comparisons.para");
+    defer allocator.free(output);
+
+    var outputs = try parseOutput(output, allocator);
+    defer outputs.deinit(allocator);
+
+    // Env to string comparisons
+    try testing.expectEqualStrings("env_eq_string_true", outputs.items[0].name);
+    try testing.expectEqualStrings("bool", outputs.items[0].type);
+    try testing.expectEqualStrings("TRUE", outputs.items[0].value);
+
+    try testing.expectEqualStrings("env_eq_string_false", outputs.items[1].name);
+    try testing.expectEqualStrings("bool", outputs.items[1].type);
+    try testing.expectEqualStrings("FALSE", outputs.items[1].value);
+
+    try testing.expectEqualStrings("env_neq_string_true", outputs.items[2].name);
+    try testing.expectEqualStrings("bool", outputs.items[2].type);
+    try testing.expectEqualStrings("TRUE", outputs.items[2].value);
+
+    try testing.expectEqualStrings("env_neq_string_false", outputs.items[3].name);
+    try testing.expectEqualStrings("bool", outputs.items[3].type);
+    try testing.expectEqualStrings("FALSE", outputs.items[3].value);
+
+    // Env to env comparisons
+    try testing.expectEqualStrings("env_eq_env_true", outputs.items[4].name);
+    try testing.expectEqualStrings("bool", outputs.items[4].type);
+    try testing.expectEqualStrings("TRUE", outputs.items[4].value);
+
+    try testing.expectEqualStrings("env_eq_env_false", outputs.items[5].name);
+    try testing.expectEqualStrings("bool", outputs.items[5].type);
+    try testing.expectEqualStrings("FALSE", outputs.items[5].value);
+
+    try testing.expectEqualStrings("env_neq_env_true", outputs.items[6].name);
+    try testing.expectEqualStrings("bool", outputs.items[6].type);
+    try testing.expectEqualStrings("TRUE", outputs.items[6].value);
+
+    try testing.expectEqualStrings("env_neq_env_false", outputs.items[7].name);
+    try testing.expectEqualStrings("bool", outputs.items[7].type);
+    try testing.expectEqualStrings("FALSE", outputs.items[7].value);
+
+    // String to env comparisons (reverse direction)
+    try testing.expectEqualStrings("string_eq_env_true", outputs.items[8].name);
+    try testing.expectEqualStrings("bool", outputs.items[8].type);
+    try testing.expectEqualStrings("TRUE", outputs.items[8].value);
+
+    try testing.expectEqualStrings("string_eq_env_false", outputs.items[9].name);
+    try testing.expectEqualStrings("bool", outputs.items[9].type);
+    try testing.expectEqualStrings("FALSE", outputs.items[9].value);
+
+    try testing.expectEqualStrings("string_neq_env_true", outputs.items[10].name);
+    try testing.expectEqualStrings("bool", outputs.items[10].type);
+    try testing.expectEqualStrings("TRUE", outputs.items[10].value);
+
+    try testing.expectEqualStrings("string_neq_env_false", outputs.items[11].name);
+    try testing.expectEqualStrings("bool", outputs.items[11].type);
+    try testing.expectEqualStrings("FALSE", outputs.items[11].value);
+}
+
+fn testEnvComparisonErrors(allocator: std.mem.Allocator) !void {
+    const err_out = try runParaCommandExpectFailure(allocator, "./test/suite/env_comparison_errors.para");
+    defer allocator.free(err_out);
+    try testing.expect(std.mem.indexOf(u8, err_out, "Comparison not supported for type env") != null);
+}
+
 fn testConditionalExpressions(allocator: std.mem.Allocator) !void {
     const output = try runParaCommand(allocator, "./test/suite/conditional_expressions.para");
     defer allocator.free(output);
@@ -1240,6 +1305,8 @@ test "para language tests" {
     runner.runTest("Env Uninit Missing", testEnvUninitializedMissing);
     runner.runTest("Env Uninit Provided", testEnvUninitializedProvided);
     runner.runTest("Env Default Value", testEnvDefaultValue);
+    runner.runTest("Env Comparisons", testEnvComparisons);
+    runner.runTest("Env Comparison Fail", testEnvComparisonErrors);
     runner.runTest("Conditional Expr", testConditionalExpressions);
     runner.runTest("Conditional Errors", testConditionalExpressionErrors);
     runner.runTest("Sugar Syntax Test", testSugar);
