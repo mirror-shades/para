@@ -66,6 +66,7 @@ fn writeScalar(
         .bool => |v| try std.fmt.format(writer, "{}", .{v}),
         .time => |v| try std.fmt.format(writer, "{}", .{v}),
         .string => |s| try writeString(writer, s),
+        .env => |e| try writeString(writer, e),
         .null_ => |_| try writer.writeAll("null"),
         .array => |_| return error.UnexpectedArray,
         .object => |_| return error.UnexpectedObject,

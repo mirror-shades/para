@@ -790,8 +790,13 @@ fn parseValueFromToken(tok: Token) Value {
         .int => .{ .int = parseIntFromLiteralChecked(tok.literal, tok.line_number, tok.token_number) },
         .float => .{ .float = parseFloatFromLiteralChecked(tok.literal, tok.line_number, tok.token_number) },
         .string => .{ .string = parseStringFromLiteral(tok.literal) },
+        .env => .{ .env = parseEnvFromLiteral(tok.literal) },
         .bool => .{ .bool = parseBoolFromLiteral(tok.literal) },
         .time => .{ .time = parseIntFromLiteralChecked(tok.literal, tok.line_number, tok.token_number) },
         .nothing => .{ .nothing = {} },
     };
+}
+
+fn parseEnvFromLiteral(literal: []const u8) []const u8 {
+    return literal;
 }

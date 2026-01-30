@@ -30,6 +30,7 @@ fn writeValue(writer: anytype, value: ir.Value) anyerror!void {
         .bool => |v| try std.fmt.format(writer, "{}", .{v}),
         .time => |v| try std.fmt.format(writer, "{}", .{v}),
         .string => |s| try writeString(writer, s),
+        .env => |e| try writeString(writer, e),
         .null_ => |_| try writer.writeAll("null"),
         .array => |arr| try writeArray(writer, arr),
         .object => |obj| try writeObject(writer, obj),

@@ -6,6 +6,7 @@ pub const ValueType = enum {
     string,
     bool,
     time,
+    env,
     nothing,
 
     pub fn toString(self: ValueType) []const u8 {
@@ -15,6 +16,7 @@ pub const ValueType = enum {
             .string => "string",
             .bool => "bool",
             .time => "time",
+            .env => "env",
             .nothing => "nothing",
         };
     }
@@ -24,6 +26,7 @@ pub const ValueKind = enum {
     int,
     float,
     string,
+    env,
     bool,
     time,
     array,
@@ -38,6 +41,7 @@ pub const Value = union(ValueKind) {
     int: i64,
     float: f64,
     string: []const u8,
+    env: []const u8,
     bool: bool,
     time: i64,
     array: Array,

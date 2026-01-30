@@ -203,6 +203,7 @@ pub const Preprocessor = struct {
             .int => |v| ir.Value{ .int = v },
             .float => |v| ir.Value{ .float = v },
             .string => |s| ir.Value{ .string = try allocator.dupe(u8, s) },
+            .env => |e| ir.Value{ .env = try allocator.dupe(u8, e) },
             .bool => |v| ir.Value{ .bool = v },
             .time => |v| ir.Value{ .time = v },
             .nothing => |_| ir.Value{ .null_ = {} },
@@ -1158,6 +1159,7 @@ pub const Preprocessor = struct {
                         .int => Value{ .int = std.fmt.parseInt(i64, token.literal, 10) catch 0 },
                         .float => Value{ .float = std.fmt.parseFloat(f64, token.literal) catch 0 },
                         .string => Value{ .string = parseStringFromLiteral(token.literal) },
+                        .env => Value{ .env = parseStringFromLiteral(token.literal) },
                         .bool => Value{ .bool = std.mem.eql(u8, token.literal, "true") },
                         .time => Value{ .time = std.fmt.parseInt(i64, token.literal, 10) catch 0 },
                         .nothing => Value{ .nothing = {} },
@@ -1483,7 +1485,7 @@ pub const Preprocessor = struct {
                             use_float = true;
                             a_float = val;
                         },
-                        .string, .bool, .array, .nothing => {
+                        .string, .bool, .array, .env, .nothing => {
                             if (self.source_lines.len > 0) {
                                 self.underlineAt(token.line_number, token.token_number, token.literal.len);
                             }
@@ -1505,7 +1507,7 @@ pub const Preprocessor = struct {
                             use_float = true;
                             b_float = val;
                         },
-                        .string, .bool, .array, .nothing => {
+                        .string, .bool, .array, .env, .nothing => {
                             if (self.source_lines.len > 0) {
                                 self.underlineAt(token.line_number, token.token_number, token.literal.len);
                             }
@@ -1642,6 +1644,7 @@ pub const Preprocessor = struct {
                                     .int => .int,
                                     .float => .float,
                                     .string => .string,
+                                    .env => .env,
                                     .bool => .bool,
                                     .time => .time,
                                     .array => .nothing,
@@ -1667,7 +1670,7 @@ pub const Preprocessor = struct {
                     if (i > 0) {
                         if (i > 0 and tokens[i - 1].token_type == .TKN_VALUE) {
                             const value_type_str = tokens[i - 1].value_type.toString();
-                            Reporting.log("[{d}:{d}] value  :{s} = ", .{
+                            Reporting.log("[{d}:{d}] value: {s} = ", .{
                                 current_token.line_number,
                                 current_token.token_number,
                                 value_type_str,
@@ -1677,6 +1680,7 @@ pub const Preprocessor = struct {
                                 .int => Reporting.log("{d}\n", .{tokens[i - 1].value.int}),
                                 .float => Reporting.log("{any}\n", .{tokens[i - 1].value.float}),
                                 .string => Reporting.log("\"{s}\"\n", .{tokens[i - 1].value.string}),
+                                .env => Reporting.log("\"{s}\"\n", .{tokens[i - 1].value.env}),
                                 .bool => Reporting.log("{s}\n", .{if (tokens[i - 1].value.bool) "TRUE" else "FALSE"}),
                                 .time => Reporting.log("{d}\n", .{tokens[i - 1].value.time}),
                                 .nothing => Reporting.log("(nothing)\n", .{}),
@@ -1709,7 +1713,7 @@ pub const Preprocessor = struct {
                         if (try self.getLookupValue(path)) |var_value| {
                             var type_buf: [64]u8 = undefined;
                             const type_str = formatType(&type_buf, var_value.type, var_value.array_depth);
-                            Reporting.log("[{d}:{d}] {s} :{s} = ", .{
+                            Reporting.log("[{d}:{d}] {s}: {s} = ", .{
                                 current_token.line_number,
                                 current_token.token_number,
                                 path_str,
@@ -1726,6 +1730,7 @@ pub const Preprocessor = struct {
                                     .int => Reporting.log("{d}\n", .{var_value.value.int}),
                                     .float => Reporting.log("{any}\n", .{var_value.value.float}),
                                     .string => Reporting.log("\"{s}\"\n", .{var_value.value.string}),
+                                    .env => Reporting.log("\"{s}\"\n", .{var_value.value.env}),
                                     .bool => Reporting.log("{s}\n", .{if (var_value.value.bool) "TRUE" else "FALSE"}),
                                     .time => Reporting.log("{d}\n", .{var_value.value.time}),
                                     .nothing => Reporting.log("(nothing)\n", .{}),
@@ -1867,6 +1872,7 @@ pub const Preprocessor = struct {
             .int => Reporting.log("{d}", .{var_value.value.int}),
             .float => Reporting.log("{d:.2}", .{var_value.value.float}),
             .string => Reporting.log("\"{s}\"", .{var_value.value.string}),
+            .env => Reporting.log("\"{s}\"", .{var_value.value.env}),
             .bool => Reporting.log("{s}", .{if (var_value.value.bool) "true" else "false"}),
             .time => Reporting.log("{d}", .{var_value.value.time}),
             .nothing => Reporting.log("(nothing)", .{}),

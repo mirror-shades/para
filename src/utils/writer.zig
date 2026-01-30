@@ -29,6 +29,9 @@ pub fn writeFlatFileToWriter(writer: anytype, tokens: []ParsedToken) !void {
                     .string => {
                         try writer.print("\"{s}\" ", .{token.value.string});
                     },
+                    .env => {
+                        try writer.print("\"{s}\" ", .{token.value.env});
+                    },
                     .bool => {
                         try writer.print("{s} ", .{if (token.value.bool) "TRUE" else "FALSE"});
                     },

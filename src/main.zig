@@ -36,8 +36,10 @@ pub fn main() !void {
     const program_name = args.next() orelse "para";
 
     var filename: ?[]const u8 = null;
+    var arg_count: usize = 0;
 
     while (args.next()) |arg| {
+        arg_count += 1;
         if (std.mem.eql(u8, arg, "--debug_lexer")) {
             debug_lexer = true;
         } else if (std.mem.eql(u8, arg, "--debug_parser")) {
@@ -71,6 +73,11 @@ pub fn main() !void {
         } else if (filename == null) {
             filename = arg;
         }
+    }
+
+    if (arg_count == 0) {
+        printUsage(program_name);
+        Reporting.throwError("No arguments provided\n", .{});
     }
 
     var reporter = Reporting.Reporter.init(debug_lexer, debug_parser, debug_preprocessor);
