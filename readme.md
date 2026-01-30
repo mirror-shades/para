@@ -45,10 +45,10 @@ The peek operator allows you to inspect variable values during preprocessing. Pl
 
 ```para
 const x = 42
-x?  // Prints: [line:col] x :int = 42
+x?  // Prints: [line:col] x: int = 42
 
 const result = x + 8
-result?  // Prints: [line:col] result :int = 50
+result?  // Prints: [line:col] result: int = 50
 ```
 
 This is especially useful for debugging complex expressions or verifying preprocessing steps.
