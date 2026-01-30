@@ -293,7 +293,7 @@ pub const Preprocessor = struct {
         }
 
         while (i < tokens.len) {
-            if (tokens[i].token_type == .TKN_ARROW) {
+            if (tokens[i].token_type == .TKN_DOT) {
                 i += 1;
                 continue;
             }
@@ -341,7 +341,7 @@ pub const Preprocessor = struct {
         while (current_index >= 0) {
             const token = tokens[@intCast(current_index)];
 
-            if (token.token_type == .TKN_ARROW) {
+            if (token.token_type == .TKN_DOT) {
                 in_path = true;
                 current_index -= 1;
                 continue;
@@ -1034,7 +1034,7 @@ pub const Preprocessor = struct {
 
             var j = start_index + 1;
             while (j + 1 < expr_tokens.len and
-                expr_tokens[j].token_type == .TKN_ARROW and
+                expr_tokens[j].token_type == .TKN_DOT and
                 (expr_tokens[j + 1].token_type == .TKN_LOOKUP or expr_tokens[j + 1].token_type == .TKN_IDENTIFIER))
             {
                 try path.append(self.allocator, expr_tokens[j + 1].literal);
@@ -1055,13 +1055,6 @@ pub const Preprocessor = struct {
             return error.EmptyExpression;
         }
 
-        // Debug: print tokens
-        std.debug.print("Evaluating expression with tokens:\n", .{});
-        for (tokens) |t| {
-            std.debug.print("  {s} ({s})\n", .{ t.literal, @tagName(t.token_type) });
-        }
-
-        // Use the shunting yard algorithm to convert infix to postfix
         var stack: std.ArrayList(Token) = .empty;
         defer stack.deinit(self.allocator);
 
@@ -1101,7 +1094,7 @@ pub const Preprocessor = struct {
 
                 var lookahead = idx + 1;
                 while (lookahead + 1 < tokens.len and
-                    tokens[lookahead].token_type == .TKN_ARROW and
+                    tokens[lookahead].token_type == .TKN_DOT and
                     (tokens[lookahead + 1].token_type == .TKN_LOOKUP or
                         tokens[lookahead + 1].token_type == .TKN_IDENTIFIER))
                 {

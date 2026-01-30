@@ -403,7 +403,7 @@ pub const Lexer = struct {
                     const current_column = self.column;
                     try self.tokens.append(self.allocator, .{
                         .literal = ".",
-                        .token_type = .TKN_ARROW,
+                        .token_type = .TKN_DOT,
                         .value_type = .nothing,
                         .line_number = self.line,
                         .token_number = current_column,

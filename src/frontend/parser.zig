@@ -135,7 +135,7 @@ pub const Parser = struct {
                         line_prefixed_with_groups = true;
                     }
 
-                    if (self.tokens[current_index].token_type == .TKN_ARROW) {
+                    if (self.tokens[current_index].token_type == .TKN_DOT) {
                         if (self.tokens[current_index + 1].token_type == .TKN_LBRACE) {
                             continue;
                         } else if (self.tokens[current_index + 1].token_type == .TKN_TYPE_ASSIGN) {
@@ -218,7 +218,7 @@ pub const Parser = struct {
                         line_prefixed_with_groups = true;
                     }
 
-                    if (self.tokens[current_index].token_type == .TKN_ARROW) {
+                    if (self.tokens[current_index].token_type == .TKN_DOT) {
                         if (self.tokens[current_index + 1].token_type == .TKN_LBRACE) {
                             continue;
                         } else if (self.tokens[current_index + 1].token_type == .TKN_TYPE_ASSIGN) {
@@ -476,7 +476,7 @@ pub const Parser = struct {
                     });
                     continue;
                 },
-                .TKN_ARROW => {
+                .TKN_DOT => {
                     continue;
                 },
                 .TKN_PLUS => {

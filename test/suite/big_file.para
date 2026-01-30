@@ -27,14 +27,4 @@ person.job.salary = newSalary
 
 person.age = 51
 
-person.age ?
-person.job.title ?
-person.job.salary ?
-person.name ?
-person.working ?
-
-
 temp const y = person.job.salary
-y ?
-
-5 ?
