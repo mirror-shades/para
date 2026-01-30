@@ -13,7 +13,7 @@ const yaml_backend = para_src.yaml_backend;
 const toml_backend = para_src.toml_backend;
 const zon_backend = para_src.zon_backend;
 
-const TEST_TOTAL = 30;
+const TEST_TOTAL = 33;
 
 fn print(comptime format: []const u8) void {
     printf(format, .{});
@@ -128,6 +128,47 @@ fn runParaCommand(allocator: std.mem.Allocator, path: []const u8) ![]const u8 {
     const result = try process.Child.run(.{
         .allocator = child_allocator,
         .argv = &[_][]const u8{ exe_path, input_abs },
+        .cwd = project_root,
+        .max_output_bytes = std.math.maxInt(usize),
+    });
+    defer child_allocator.free(result.stdout);
+    defer child_allocator.free(result.stderr);
+
+    switch (result.term) {
+        .Exited => |code| if (code != 0) return error.CommandFailed,
+        else => return error.CommandFailed,
+    }
+
+    return try allocator.dupe(u8, result.stdout);
+}
+
+fn runParaCommandWithArgs(allocator: std.mem.Allocator, path: []const u8, extra_args: []const []const u8) ![]const u8 {
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const child_allocator = arena.allocator();
+
+    const project_root = try findProjectRoot(allocator);
+    defer allocator.free(project_root);
+
+    const exe_path = try getParaExePath(allocator, project_root);
+    defer allocator.free(exe_path);
+
+    var root_dir = try fs.openDirAbsolute(project_root, .{});
+    defer root_dir.close();
+    _ = root_dir.openFile(path, .{}) catch return error.FileNotFound;
+
+    const input_abs = try fs.path.join(allocator, &[_][]const u8{ project_root, path });
+    defer allocator.free(input_abs);
+
+    var argv: std.ArrayList([]const u8) = .empty;
+    defer argv.deinit(child_allocator);
+    try argv.append(child_allocator, exe_path);
+    for (extra_args) |arg| try argv.append(child_allocator, arg);
+    try argv.append(child_allocator, input_abs);
+
+    const result = try process.Child.run(.{
+        .allocator = child_allocator,
+        .argv = argv.items,
         .cwd = project_root,
         .max_output_bytes = std.math.maxInt(usize),
     });
@@ -559,6 +600,36 @@ fn testBigFile(allocator: std.mem.Allocator) !void {
     try testing.expectEqualStrings("value", outputs.items[6].name);
     try testing.expectEqualStrings("int", outputs.items[6].type);
     try testing.expectEqualStrings("5", outputs.items[6].value);
+}
+
+fn testEnvUninitializedMissing(allocator: std.mem.Allocator) !void {
+    const err_out = try runParaCommandExpectFailure(allocator, "./test/suite/env_uninitialized_missing.para");
+    defer allocator.free(err_out);
+    try testing.expect(std.mem.indexOf(u8, err_out, "Required env variable 'platform' not provided") != null);
+}
+
+fn testEnvUninitializedProvided(allocator: std.mem.Allocator) !void {
+    const output = try runParaCommandWithArgs(allocator, "./test/suite/env_uninitialized_missing.para", &[_][]const u8{"-Dplatform=windows"});
+    defer allocator.free(output);
+
+    var outputs = try parseOutput(output, allocator);
+    defer outputs.deinit(allocator);
+
+    try testing.expectEqualStrings("platform", outputs.items[0].name);
+    try testing.expectEqualStrings("env", outputs.items[0].type);
+    try testing.expectEqualStrings("\"windows\"", outputs.items[0].value);
+}
+
+fn testEnvDefaultValue(allocator: std.mem.Allocator) !void {
+    const output = try runParaCommand(allocator, "./test/suite/env_default_value.para");
+    defer allocator.free(output);
+
+    var outputs = try parseOutput(output, allocator);
+    defer outputs.deinit(allocator);
+
+    try testing.expectEqualStrings("platform", outputs.items[0].name);
+    try testing.expectEqualStrings("env", outputs.items[0].type);
+    try testing.expectEqualStrings("\"default\"", outputs.items[0].value);
 }
 
 fn testSugar(allocator: std.mem.Allocator) !void {
@@ -1110,12 +1181,15 @@ test "para language tests" {
     runner.runTest("Variable Assignment", testBasicVariableAssignment);
     runner.runTest("Group Assignments", testGroupAssignments);
     runner.runTest("Big File Processing", testBigFile);
+    runner.runTest("Env Uninit Missing", testEnvUninitializedMissing);
+    runner.runTest("Env Uninit Provided", testEnvUninitializedProvided);
+    runner.runTest("Env Default Value", testEnvDefaultValue);
     runner.runTest("Sugar Syntax Test", testSugar);
     runner.runTest("Comment Newlines", testLineCommentsPreserveNewlines);
     runner.runTest("Time Type Test", testTimeType);
     runner.runTest("Invalid Time Test", testTimeTypeInvalid);
     runner.runTest("Division Operator", testDivisionOperator);
-    runner.runTest("Logical Expressions", testLogicalExpressions);
+    runner.runTest("Logic Expressions", testLogicalExpressions);
     runner.runTest("Unterminated /* */", testUnterminatedMultilineCommentFails);
     runner.runTest("Int Overflow Test", testIntegerOverflowLiteralFails);
     runner.runTest("JSON Grouping Test", testJsonGroupings);

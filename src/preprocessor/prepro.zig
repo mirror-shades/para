@@ -2064,6 +2064,18 @@ fn coerceValueToType(self: *Preprocessor, declared_type: ValueType, declared_arr
     if (declared_array_depth == 0) {
         if (value_item.array_depth != 0) return error.TypeMismatch;
         switch (declared_type) {
+            .env => {
+                switch (value_item.type) {
+                    .env => return out,
+                    .string => {
+                        out.value = Value{ .env = value_item.value.string };
+                        out.type = .env;
+                        out.array_depth = 0;
+                        return out;
+                    },
+                    else => return out,
+                }
+            },
             .time => {
                 switch (value_item.type) {
                     .time => return out,
