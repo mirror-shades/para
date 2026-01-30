@@ -1,0 +1,29 @@
+// compile-time knobs (set via -D...)
+const environment: env = "development" // or: production
+const api_key: env                     // required
+
+// derived values (keep “assertable” things at top-level for now)
+temp const is_prod: bool = environment == "production"
+
+const port: int = if (is_prod) then 443 else 8080
+# assert port > 0 and port < 65536
+
+const base_url: string = if (is_prod) then "https://payments.example.com" else "http://localhost:8080"
+
+const deployed_at: time = "2024-03-14T16:45:00Z"
+
+service {
+    const name: string = "payments"
+    const port: int = port
+    const base_url: string = base_url
+}
+
+features: bool {
+    const metrics = true
+    const tracing = is_prod
+}
+
+const allowed_origins: string[] = ["http://localhost:3000", "https://app.example.com"]
+
+port?
+base_url?

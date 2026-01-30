@@ -1536,7 +1536,8 @@ pub const Preprocessor = struct {
                         .int => b.base == .int or b.base == .float,
                         .float => b.base == .int or b.base == .float,
                         .bool => b.base == .bool and (token.token_type == .TKN_EQ or token.token_type == .TKN_NEQ),
-                        .string => b.base == .string and (token.token_type == .TKN_EQ or token.token_type == .TKN_NEQ),
+                        .string => (b.base == .string or b.base == .env) and (token.token_type == .TKN_EQ or token.token_type == .TKN_NEQ),
+                        .env => (b.base == .string or b.base == .env) and (token.token_type == .TKN_EQ or token.token_type == .TKN_NEQ),
                         else => false,
                     };
 
@@ -1960,11 +1961,61 @@ pub const Preprocessor = struct {
                                         },
                                     };
                                 },
+                                .env => |b_val| {
+                                    result = switch (token.token_type) {
+                                        .TKN_EQ => std.mem.eql(u8, a_val, b_val),
+                                        .TKN_NEQ => !std.mem.eql(u8, a_val, b_val),
+                                        else => {
+                                            if (self.source_lines.len > 0) {
+                                                self.underlineAt(token.line_number, token.token_number, token.literal.len);
+                                            }
+                                            Reporting.throwError("Operator {s} not supported for string/env comparisons (line {d}, token {d})\n", .{ token.literal, token.line_number, token.token_number });
+                                            return error.InvalidOperatorForType;
+                                        },
+                                    };
+                                },
                                 else => {
                                     if (self.source_lines.len > 0) {
                                         self.underlineAt(token.line_number, token.token_number, token.literal.len);
                                     }
                                     Reporting.throwError("Cannot compare string with {s} (line {d}, token {d})\n", .{ @tagName(b), token.line_number, token.token_number });
+                                    return error.TypeMismatch;
+                                },
+                            }
+                        },
+                        .env => |a_val| {
+                            switch (b) {
+                                .string => |b_val| {
+                                    result = switch (token.token_type) {
+                                        .TKN_EQ => std.mem.eql(u8, a_val, b_val),
+                                        .TKN_NEQ => !std.mem.eql(u8, a_val, b_val),
+                                        else => {
+                                            if (self.source_lines.len > 0) {
+                                                self.underlineAt(token.line_number, token.token_number, token.literal.len);
+                                            }
+                                            Reporting.throwError("Operator {s} not supported for env/string comparisons (line {d}, token {d})\n", .{ token.literal, token.line_number, token.token_number });
+                                            return error.InvalidOperatorForType;
+                                        },
+                                    };
+                                },
+                                .env => |b_val| {
+                                    result = switch (token.token_type) {
+                                        .TKN_EQ => std.mem.eql(u8, a_val, b_val),
+                                        .TKN_NEQ => !std.mem.eql(u8, a_val, b_val),
+                                        else => {
+                                            if (self.source_lines.len > 0) {
+                                                self.underlineAt(token.line_number, token.token_number, token.literal.len);
+                                            }
+                                            Reporting.throwError("Operator {s} not supported for env values (line {d}, token {d})\n", .{ token.literal, token.line_number, token.token_number });
+                                            return error.InvalidOperatorForType;
+                                        },
+                                    };
+                                },
+                                else => {
+                                    if (self.source_lines.len > 0) {
+                                        self.underlineAt(token.line_number, token.token_number, token.literal.len);
+                                    }
+                                    Reporting.throwError("Cannot compare env with {s} (line {d}, token {d})\n", .{ @tagName(b), token.line_number, token.token_number });
                                     return error.TypeMismatch;
                                 },
                             }
