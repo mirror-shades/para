@@ -43,12 +43,26 @@ pub fn main() !void {
 
     while (args.next()) |arg| {
         arg_count += 1;
-        if (std.mem.startsWith(u8, arg, "-D")) {
-            // Parse -Dname=value or -Dname="value"
-            const define_part: []const u8 = arg[2..]; // skip "-D"
-            if (std.mem.indexOf(u8, define_part, "=")) |eq_pos| {
-                const name = define_part[0..eq_pos];
-                const raw_value = define_part[eq_pos + 1 ..];
+        if (std.mem.eql(u8, arg, "-D") or std.mem.startsWith(u8, arg, "-D")) {
+            // Parse -Dname=value, -Dname="value", or the split form: -D name=value
+            const spec: []const u8 = blk: {
+                if (std.mem.eql(u8, arg, "-D")) {
+                    break :blk args.next() orelse {
+                        Reporting.throwError("-D requires a value (expected name=value)\n", .{});
+                        return;
+                    };
+                }
+                break :blk arg[2..]; // skip "-D"
+            };
+
+            if (spec.len == 0) {
+                Reporting.throwError("-D requires a value (expected name=value)\n", .{});
+                return;
+            }
+
+            if (std.mem.indexOf(u8, spec, "=")) |eq_pos| {
+                const name = spec[0..eq_pos];
+                const raw_value = spec[eq_pos + 1 ..];
                 // Strip quotes if present
                 const value = if (raw_value.len >= 2 and raw_value[0] == '"' and raw_value[raw_value.len - 1] == '"')
                     raw_value[1 .. raw_value.len - 1]
@@ -56,7 +70,7 @@ pub fn main() !void {
                     raw_value;
                 try defines.put(name, value);
             } else {
-                Reporting.throwError("-D requires format -Dname=value\n", .{});
+                Reporting.throwError("-D requires format name=value (e.g. -Dplatform=windows or -D platform=windows)\n", .{});
                 return;
             }
         } else if (std.mem.eql(u8, arg, "--debug_lexer")) {
@@ -250,6 +264,7 @@ fn printUsage(program_name: []const u8) void {
     Reporting.log("Usage: {s} [options] <file>\n", .{program_name});
     Reporting.log("Options:\n", .{});
     Reporting.log("  -D<name>=<value>     Define an env variable (e.g. -Dplatform=windows)\n", .{});
+    Reporting.log("  -D <name>=<value>    Define an env variable (split form)\n", .{});
     Reporting.log("  --debug_lexer        Enable lexer debug output\n", .{});
     Reporting.log("  --debug_parser       Enable parser debug output\n", .{});
     Reporting.log("  --debug_preprocessor Enable preprocessor debug output\n", .{});

@@ -1,2 +1,12 @@
-var platform: env
-platform?
+
+// variables typed as env can be defined during compilation via a -D flag
+// they are stored as strings and can be initialized with default values
+const platform: env = "unix"
+
+// uninitialized env variables require you to define them e.g. -D=platform=unix
+const environment: env
+#assert environment == "development" or environment == "production" // require specific definitions using assert
+
+const origin = if (environment == "production") then "https://example.com" else "localhost:8000" 
+
+origin?
