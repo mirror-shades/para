@@ -76,6 +76,9 @@ pub const TokenKind = enum {
     TKN_EXCLAIM, // !
     TKN_AND, // and
     TKN_OR, // or
+    TKN_IF, // if keyword
+    TKN_THEN, // then keyword
+    TKN_ELSE, // else keyword
     TKN_VAR, // var keyword
     TKN_CONST, // const keyword
     TKN_TEMP, // temp keyword
@@ -115,6 +118,9 @@ pub const TokenKind = enum {
             .TKN_EXCLAIM => "TKN_EXCLAIM",
             .TKN_AND => "TKN_AND",
             .TKN_OR => "TKN_OR",
+            .TKN_IF => "TKN_IF",
+            .TKN_THEN => "TKN_THEN",
+            .TKN_ELSE => "TKN_ELSE",
             .TKN_VAR => "TKN_VAR",
             .TKN_CONST => "TKN_CONST",
             .TKN_TEMP => "TKN_TEMP",

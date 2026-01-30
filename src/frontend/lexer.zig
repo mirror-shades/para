@@ -197,6 +197,10 @@ pub const Lexer = struct {
                 const current_column = self.column;
                 const word = try self.readWord();
 
+                const is_if_keyword = (c == 'i' and std.mem.eql(u8, word, "if"));
+                const is_then_keyword = (c == 't' and std.mem.eql(u8, word, "then"));
+                const is_else_keyword = (c == 'e' and std.mem.eql(u8, word, "else"));
+
                 const is_type_word =
                     (c == 'i' and std.mem.eql(u8, word, "int")) or
                     (c == 'f' and std.mem.eql(u8, word, "float")) or
@@ -219,7 +223,31 @@ pub const Lexer = struct {
 
                 const is_temp_keyword = std.mem.eql(u8, word, "temp");
 
-                if (is_type_word) {
+                if (is_if_keyword) {
+                    try self.tokens.append(self.allocator, .{
+                        .literal = word,
+                        .token_type = .TKN_IF,
+                        .value_type = .nothing,
+                        .line_number = self.line,
+                        .token_number = current_column,
+                    });
+                } else if (is_then_keyword) {
+                    try self.tokens.append(self.allocator, .{
+                        .literal = word,
+                        .token_type = .TKN_THEN,
+                        .value_type = .nothing,
+                        .line_number = self.line,
+                        .token_number = current_column,
+                    });
+                } else if (is_else_keyword) {
+                    try self.tokens.append(self.allocator, .{
+                        .literal = word,
+                        .token_type = .TKN_ELSE,
+                        .value_type = .nothing,
+                        .line_number = self.line,
+                        .token_number = current_column,
+                    });
+                } else if (is_type_word) {
                     try self.tokens.append(self.allocator, .{
                         .literal = word,
                         .token_type = .TKN_TYPE,
@@ -622,6 +650,30 @@ pub const Lexer = struct {
             try self.tokens.append(self.allocator, .{
                 .literal = word,
                 .token_type = .TKN_TEMP,
+                .value_type = .nothing,
+                .line_number = self.line,
+                .token_number = column,
+            });
+        } else if (std.mem.eql(u8, word, "if")) {
+            try self.tokens.append(self.allocator, .{
+                .literal = word,
+                .token_type = .TKN_IF,
+                .value_type = .nothing,
+                .line_number = self.line,
+                .token_number = column,
+            });
+        } else if (std.mem.eql(u8, word, "then")) {
+            try self.tokens.append(self.allocator, .{
+                .literal = word,
+                .token_type = .TKN_THEN,
+                .value_type = .nothing,
+                .line_number = self.line,
+                .token_number = column,
+            });
+        } else if (std.mem.eql(u8, word, "else")) {
+            try self.tokens.append(self.allocator, .{
+                .literal = word,
+                .token_type = .TKN_ELSE,
                 .value_type = .nothing,
                 .line_number = self.line,
                 .token_number = column,

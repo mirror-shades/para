@@ -13,7 +13,7 @@ const yaml_backend = para_src.yaml_backend;
 const toml_backend = para_src.toml_backend;
 const zon_backend = para_src.zon_backend;
 
-const TEST_TOTAL = 33;
+const TEST_TOTAL = 35;
 
 fn print(comptime format: []const u8) void {
     printf(format, .{});
@@ -632,6 +632,62 @@ fn testEnvDefaultValue(allocator: std.mem.Allocator) !void {
     try testing.expectEqualStrings("\"default\"", outputs.items[0].value);
 }
 
+fn testConditionalExpressions(allocator: std.mem.Allocator) !void {
+    const output = try runParaCommand(allocator, "./test/suite/conditional_expressions.para");
+    defer allocator.free(output);
+
+    var outputs = try parseOutput(output, allocator);
+    defer outputs.deinit(allocator);
+
+    try testing.expectEqualStrings("cond_basic", outputs.items[0].name);
+    try testing.expectEqualStrings("int", outputs.items[0].type);
+    try testing.expectEqualStrings("1", outputs.items[0].value);
+
+    try testing.expectEqualStrings("cond_short_circuit", outputs.items[1].name);
+    try testing.expectEqualStrings("int", outputs.items[1].type);
+    try testing.expectEqualStrings("1", outputs.items[1].value);
+
+    try testing.expectEqualStrings("cond_nested", outputs.items[2].name);
+    try testing.expectEqualStrings("int", outputs.items[2].type);
+    try testing.expectEqualStrings("3", outputs.items[2].value);
+
+    try testing.expectEqualStrings("x", outputs.items[3].name);
+    try testing.expectEqualStrings("int", outputs.items[3].type);
+    try testing.expectEqualStrings("6", outputs.items[3].value);
+}
+
+fn testConditionalExpressionErrors(allocator: std.mem.Allocator) !void {
+    {
+        const err_out = try runParaCommandExpectFailure(allocator, "./test/suite/conditional_error_missing_then.para");
+        defer allocator.free(err_out);
+        try testing.expect(std.mem.indexOf(u8, err_out, "missing 'then'") != null);
+    }
+
+    {
+        const err_out = try runParaCommandExpectFailure(allocator, "./test/suite/conditional_error_missing_else.para");
+        defer allocator.free(err_out);
+        try testing.expect(std.mem.indexOf(u8, err_out, "missing 'else'") != null);
+    }
+
+    {
+        const err_out = try runParaCommandExpectFailure(allocator, "./test/suite/conditional_error_missing_parens.para");
+        defer allocator.free(err_out);
+        try testing.expect(std.mem.indexOf(u8, err_out, "requires parentheses") != null);
+    }
+
+    {
+        const err_out = try runParaCommandExpectFailure(allocator, "./test/suite/conditional_error_non_bool.para");
+        defer allocator.free(err_out);
+        try testing.expect(std.mem.indexOf(u8, err_out, "condition must be bool") != null);
+    }
+
+    {
+        const err_out = try runParaCommandExpectFailure(allocator, "./test/suite/conditional_error_branch_mismatch.para");
+        defer allocator.free(err_out);
+        try testing.expect(std.mem.indexOf(u8, err_out, "branch type mismatch") != null);
+    }
+}
+
 fn testSugar(allocator: std.mem.Allocator) !void {
     const output = try runParaCommand(allocator, "./test/suite/sugar.para");
     defer allocator.free(output);
@@ -1184,6 +1240,8 @@ test "para language tests" {
     runner.runTest("Env Uninit Missing", testEnvUninitializedMissing);
     runner.runTest("Env Uninit Provided", testEnvUninitializedProvided);
     runner.runTest("Env Default Value", testEnvDefaultValue);
+    runner.runTest("Conditional Expr", testConditionalExpressions);
+    runner.runTest("Conditional Errors", testConditionalExpressionErrors);
     runner.runTest("Sugar Syntax Test", testSugar);
     runner.runTest("Comment Newlines", testLineCommentsPreserveNewlines);
     runner.runTest("Time Type Test", testTimeType);

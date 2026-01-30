@@ -1,0 +1,5 @@
+const xs: int[] = [1]
+const xss: int[][] = [[1]]
+
+const x = if (true) then xs else xss
+

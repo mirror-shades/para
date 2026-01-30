@@ -30,6 +30,15 @@ const modulo = 17 % 5      // 2
 const division = 15 / 3    // 5
 ```
 
+### Conditional Expressions
+
+Para supports a conditional expression form that can be used anywhere an expression is allowed:
+
+```para
+const answer: int = if (true) then 1 else 2
+const safe: int = if (true) then 1 else 1 / 0  // else-branch is not evaluated
+```
+
 ### Peek Operator (`?`)
 
 The peek operator allows you to inspect variable values during preprocessing. Place `?` after any variable or expression to print its current value and type:
@@ -90,7 +99,7 @@ const percentage = 85
 
 - Valid identifiers use `a-z`, `0-9`, `_`, but must not start with a number (e.g., `my_var`, `user2`, `first_name`).
 - Case-sensitive (e.g., `myVar` and `MyVar` are distinct).
-- Reserved keywords (TBD, e.g., `int`, `float`, `string`, `bool`, `time`) cannot be used as identifiers.
+- Reserved keywords (e.g., `int`, `float`, `string`, `bool`, `time`, `if`, `then`, `else`) cannot be used as identifiers.
 
 ### Comments
 

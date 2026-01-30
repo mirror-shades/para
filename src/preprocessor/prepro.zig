@@ -1092,10 +1092,534 @@ pub const Preprocessor = struct {
         return result;
     }
 
-    fn evaluateExpression(self: *Preprocessor, tokens: []Token) !Value {
+    const IfThenElseParts = struct {
+        if_token: Token,
+        then_token: Token,
+        else_token: Token,
+        condition: []Token,
+        then_expr: []Token,
+        else_expr: []Token,
+    };
+
+    fn splitIfThenElse(self: *Preprocessor, tokens: []Token) anyerror!IfThenElseParts {
+        const if_token = tokens[0];
+
+        if (tokens.len < 2 or tokens[1].token_type != .TKN_LPAREN) {
+            if (self.source_lines.len > 0) {
+                const t = if (tokens.len > 1) tokens[1] else if_token;
+                self.underlineAt(t.line_number, t.token_number, @max(@as(usize, 1), t.literal.len));
+            }
+            Reporting.throwError(
+                "Conditional expression requires parentheses: if (<cond>) then <expr> else <expr> (line {d}, token {d})\n",
+                .{ if_token.line_number, if_token.token_number },
+            );
+            return error.MissingConditionalParens;
+        }
+
+        // Find matching ')'
+        var depth: usize = 1;
+        var close_index: ?usize = null;
+        var i: usize = 2;
+        while (i < tokens.len) : (i += 1) {
+            switch (tokens[i].token_type) {
+                .TKN_LPAREN => depth += 1,
+                .TKN_RPAREN => {
+                    depth -= 1;
+                    if (depth == 0) {
+                        close_index = i;
+                        break;
+                    }
+                },
+                else => {},
+            }
+        }
+
+        if (close_index == null) {
+            if (self.source_lines.len > 0) {
+                self.underlineAt(if_token.line_number, if_token.token_number, if_token.literal.len);
+            }
+            Reporting.throwError(
+                "Conditional expression missing ')' after condition (line {d}, token {d})\n",
+                .{ if_token.line_number, if_token.token_number },
+            );
+            return error.MissingConditionalRParen;
+        }
+
+        const cond_end = close_index.?;
+        const cond_tokens = tokens[2..cond_end];
+
+        const then_index = cond_end + 1;
+        if (then_index >= tokens.len or tokens[then_index].token_type != .TKN_THEN) {
+            if (self.source_lines.len > 0) {
+                const t = if (then_index < tokens.len) tokens[then_index] else tokens[cond_end];
+                self.underlineAt(t.line_number, t.token_number, @max(@as(usize, 1), t.literal.len));
+            }
+            Reporting.throwError(
+                "Conditional expression missing 'then' (expected: if (<cond>) then <expr> else <expr>) (line {d}, token {d})\n",
+                .{ if_token.line_number, if_token.token_number },
+            );
+            return error.MissingThen;
+        }
+
+        const then_token = tokens[then_index];
+        const then_start = then_index + 1;
+        if (then_start >= tokens.len) {
+            if (self.source_lines.len > 0) {
+                self.underlineAt(then_token.line_number, then_token.token_number, then_token.literal.len);
+            }
+            Reporting.throwError(
+                "Conditional expression missing expression after 'then' (line {d}, token {d})\n",
+                .{ then_token.line_number, then_token.token_number },
+            );
+            return error.MissingThenExpression;
+        }
+
+        // Find the outer matching `else` for this `if` (skip nested if/else pairs).
+        var else_index: ?usize = null;
+        var paren_depth: usize = 0;
+        var nested_ifs: usize = 0;
+        var j: usize = then_start;
+        while (j < tokens.len) : (j += 1) {
+            const t = tokens[j];
+            switch (t.token_type) {
+                .TKN_LPAREN => paren_depth += 1,
+                .TKN_RPAREN => {
+                    if (paren_depth > 0) paren_depth -= 1;
+                },
+                .TKN_IF => nested_ifs += 1,
+                .TKN_ELSE => {
+                    if (nested_ifs > 0) {
+                        nested_ifs -= 1;
+                    } else if (paren_depth == 0) {
+                        else_index = j;
+                        break;
+                    }
+                },
+                else => {},
+            }
+        }
+
+        if (else_index == null) {
+            if (self.source_lines.len > 0) {
+                self.underlineAt(then_token.line_number, then_token.token_number, then_token.literal.len);
+            }
+            Reporting.throwError(
+                "Conditional expression missing 'else' (expected: if (<cond>) then <expr> else <expr>) (line {d}, token {d})\n",
+                .{ if_token.line_number, if_token.token_number },
+            );
+            return error.MissingElse;
+        }
+
+        const else_token = tokens[else_index.?];
+        const then_tokens = tokens[then_start..else_index.?];
+        const else_start = else_index.? + 1;
+        if (else_start >= tokens.len) {
+            if (self.source_lines.len > 0) {
+                self.underlineAt(else_token.line_number, else_token.token_number, else_token.literal.len);
+            }
+            Reporting.throwError(
+                "Conditional expression missing expression after 'else' (line {d}, token {d})\n",
+                .{ else_token.line_number, else_token.token_number },
+            );
+            return error.MissingElseExpression;
+        }
+
+        const else_tokens = tokens[else_start..];
+        if (then_tokens.len == 0) {
+            if (self.source_lines.len > 0) {
+                self.underlineAt(then_token.line_number, then_token.token_number, then_token.literal.len);
+            }
+            Reporting.throwError(
+                "Conditional expression missing expression after 'then' (line {d}, token {d})\n",
+                .{ then_token.line_number, then_token.token_number },
+            );
+            return error.MissingThenExpression;
+        }
+
+        return .{
+            .if_token = if_token,
+            .then_token = then_token,
+            .else_token = else_token,
+            .condition = cond_tokens,
+            .then_expr = then_tokens,
+            .else_expr = else_tokens,
+        };
+    }
+
+    fn inferIfThenElseType(self: *Preprocessor, tokens: []Token) anyerror!TypeInfo {
+        const parts = try self.splitIfThenElse(tokens);
+        const cond_type = try self.inferExpressionType(parts.condition);
+        if (cond_type.depth != 0 or cond_type.base != .bool) {
+            if (self.source_lines.len > 0 and parts.condition.len > 0) {
+                const t = parts.condition[0];
+                self.underlineAt(t.line_number, t.token_number, @max(@as(usize, 1), t.literal.len));
+            }
+            Reporting.throwError(
+                "Conditional expression condition must be bool (line {d}, token {d})\n",
+                .{ parts.if_token.line_number, parts.if_token.token_number },
+            );
+            return error.ConditionalConditionNotBool;
+        }
+
+        const then_type = try self.inferExpressionType(parts.then_expr);
+        const else_type = try self.inferExpressionType(parts.else_expr);
+
+        if (then_type.base != else_type.base or then_type.depth != else_type.depth) {
+            if (self.source_lines.len > 0) {
+                self.underlineAt(parts.else_token.line_number, parts.else_token.token_number, parts.else_token.literal.len);
+            }
+            var then_buf: [64]u8 = undefined;
+            var else_buf: [64]u8 = undefined;
+            const then_str = formatType(&then_buf, then_type.base, then_type.depth);
+            const else_str = formatType(&else_buf, else_type.base, else_type.depth);
+            Reporting.throwError(
+                "Conditional expression branch type mismatch: then is {s}, else is {s} (line {d}, token {d})\n",
+                .{ then_str, else_str, parts.if_token.line_number, parts.if_token.token_number },
+            );
+            return error.ConditionalBranchTypeMismatch;
+        }
+
+        return then_type;
+    }
+
+    fn inferExpressionType(self: *Preprocessor, tokens: []Token) anyerror!TypeInfo {
         if (tokens.len == 0) {
             Reporting.throwError("Empty expression\n", .{});
             return error.EmptyExpression;
+        }
+
+        if (tokens[0].token_type == .TKN_IF) {
+            return try self.inferIfThenElseType(tokens);
+        }
+
+        for (tokens) |t| {
+            if (t.token_type == .TKN_IF or t.token_type == .TKN_THEN or t.token_type == .TKN_ELSE) {
+                if (self.source_lines.len > 0) {
+                    self.underlineAt(t.line_number, t.token_number, @max(@as(usize, 1), t.literal.len));
+                }
+                Reporting.throwError(
+                    "Conditional expressions must be the full expression (expected: if (<cond>) then <expr> else <expr>) (line {d}, token {d})\n",
+                    .{ t.line_number, t.token_number },
+                );
+                return error.ConditionalInCompoundExpression;
+            }
+        }
+
+        var stack: std.ArrayList(Token) = .empty;
+        defer stack.deinit(self.allocator);
+
+        var output: std.ArrayList(Token) = .empty;
+        defer output.deinit(self.allocator);
+
+        const getPrecedence = struct {
+            fn get(token_type: TokenKind) u8 {
+                return switch (token_type) {
+                    .TKN_EXCLAIM => 4,
+                    .TKN_POWER => 3,
+                    .TKN_STAR, .TKN_SLASH, .TKN_PERCENT => 2,
+                    .TKN_PLUS, .TKN_MINUS => 1,
+                    .TKN_GT, .TKN_LT, .TKN_GTE, .TKN_LTE, .TKN_EQ, .TKN_NEQ => 2,
+                    .TKN_AND => 1,
+                    .TKN_OR => 0,
+                    else => 0,
+                };
+            }
+        }.get;
+
+        // Convert to postfix notation (same rules as evaluateExpression).
+        var idx: usize = 0;
+        while (idx < tokens.len) : (idx += 1) {
+            const token = tokens[idx];
+
+            if (token.token_type == .TKN_VALUE) {
+                try output.append(self.allocator, token);
+            } else if (token.token_type == .TKN_IDENTIFIER) {
+                try output.append(self.allocator, token);
+            } else if (token.token_type == .TKN_LOOKUP) {
+                try output.append(self.allocator, token);
+
+                var lookahead = idx + 1;
+                while (lookahead + 1 < tokens.len and
+                    tokens[lookahead].token_type == .TKN_DOT and
+                    (tokens[lookahead + 1].token_type == .TKN_LOOKUP or
+                        tokens[lookahead + 1].token_type == .TKN_IDENTIFIER))
+                {
+                    lookahead += 2;
+                }
+                if (lookahead > idx + 1) {
+                    idx = lookahead - 1;
+                }
+            } else if (token.token_type == .TKN_EXCLAIM) {
+                try stack.append(self.allocator, token);
+            } else if (token.token_type == .TKN_PLUS or token.token_type == .TKN_MINUS or
+                token.token_type == .TKN_STAR or token.token_type == .TKN_SLASH or
+                token.token_type == .TKN_PERCENT or token.token_type == .TKN_POWER or
+                token.token_type == .TKN_GT or token.token_type == .TKN_LT or
+                token.token_type == .TKN_GTE or token.token_type == .TKN_LTE or
+                token.token_type == .TKN_EQ or token.token_type == .TKN_NEQ or
+                token.token_type == .TKN_AND or token.token_type == .TKN_OR)
+            {
+                while (stack.items.len > 0 and
+                    getPrecedence(stack.items[stack.items.len - 1].token_type) >= getPrecedence(token.token_type))
+                {
+                    if (stack.items.len > 0) {
+                        const last_op = stack.items[stack.items.len - 1];
+                        try output.append(self.allocator, last_op);
+                        _ = stack.orderedRemove(stack.items.len - 1);
+                    }
+                }
+                try stack.append(self.allocator, token);
+            } else if (token.token_type == .TKN_LPAREN) {
+                try stack.append(self.allocator, token);
+            } else if (token.token_type == .TKN_RPAREN) {
+                while (stack.items.len > 0 and stack.items[stack.items.len - 1].token_type != .TKN_LPAREN) {
+                    if (stack.items.len > 0) {
+                        const last_op = stack.items[stack.items.len - 1];
+                        try output.append(self.allocator, last_op);
+                        _ = stack.orderedRemove(stack.items.len - 1);
+                    }
+                }
+                if (stack.items.len > 0 and stack.items[stack.items.len - 1].token_type == .TKN_LPAREN) {
+                    _ = stack.orderedRemove(stack.items.len - 1);
+                }
+            }
+        }
+
+        while (stack.items.len > 0) {
+            const last_op = stack.items[stack.items.len - 1];
+            try output.append(self.allocator, last_op);
+            _ = stack.orderedRemove(stack.items.len - 1);
+        }
+
+        // Evaluate types on the postfix expression
+        var type_stack: std.ArrayList(TypeInfo) = .empty;
+        defer type_stack.deinit(self.allocator);
+
+        for (output.items) |token| {
+            switch (token.token_type) {
+                .TKN_VALUE => {
+                    try type_stack.append(self.allocator, .{ .base = token.value_type, .depth = 0 });
+                },
+                .TKN_IDENTIFIER, .TKN_LOOKUP => {
+                    const path = try self.buildExpressionLookupPath(tokens, token);
+                    defer self.allocator.free(path);
+
+                    const maybe_var = self.getLookupValue(path) catch {
+                        if (self.source_lines.len > 0) {
+                            self.underlineAt(token.line_number, token.token_number, token.literal.len);
+                        }
+                        Reporting.throwError(
+                            "Variable '{s}' not found in expression (line {d}, token {d})\n",
+                            .{ token.literal, token.line_number, token.token_number },
+                        );
+                        return error.VariableNotFoundInExpression;
+                    };
+
+                    if (maybe_var) |resolved| {
+                        try type_stack.append(self.allocator, .{ .base = resolved.type, .depth = resolved.array_depth });
+                    } else {
+                        if (self.source_lines.len > 0) {
+                            self.underlineAt(token.line_number, token.token_number, token.literal.len);
+                        }
+                        Reporting.throwError(
+                            "Variable '{s}' not found in expression (line {d}, token {d})\n",
+                            .{ token.literal, token.line_number, token.token_number },
+                        );
+                        return error.VariableNotFoundInExpression;
+                    }
+                },
+                .TKN_EXCLAIM => {
+                    if (type_stack.items.len < 1) {
+                        if (self.source_lines.len > 0) {
+                            self.underlineAt(token.line_number, token.token_number, token.literal.len);
+                        }
+                        Reporting.throwError(
+                            "Not enough operands for operator {s} (line {d}, token {d})\n",
+                            .{ token.literal, token.line_number, token.token_number },
+                        );
+                        return error.NotEnoughOperands;
+                    }
+                    const idx_top = type_stack.items.len - 1;
+                    const a = type_stack.items[idx_top];
+                    if (a.depth != 0 or a.base != .bool) {
+                        if (self.source_lines.len > 0) {
+                            self.underlineAt(token.line_number, token.token_number, token.literal.len);
+                        }
+                        Reporting.throwError(
+                            "Logical not (!) only supported on bool values (line {d}, token {d})\n",
+                            .{ token.line_number, token.token_number },
+                        );
+                        return error.TypeMismatch;
+                    }
+                    type_stack.items[idx_top] = .{ .base = .bool, .depth = 0 };
+                },
+                .TKN_AND, .TKN_OR => {
+                    if (type_stack.items.len < 2) {
+                        if (self.source_lines.len > 0) {
+                            self.underlineAt(token.line_number, token.token_number, token.literal.len);
+                        }
+                        Reporting.throwError("Not enough operands for operator {s} (line {d}, token {d})\n", .{ token.literal, token.line_number, token.token_number });
+                        return error.NotEnoughOperands;
+                    }
+
+                    const b = type_stack.items[type_stack.items.len - 1];
+                    const a = type_stack.items[type_stack.items.len - 2];
+                    if (a.depth != 0 or b.depth != 0 or a.base != .bool or b.base != .bool) {
+                        if (self.source_lines.len > 0) {
+                            self.underlineAt(token.line_number, token.token_number, token.literal.len);
+                        }
+                        Reporting.throwError(
+                            "Logical operator {s} requires boolean operands (line {d}, token {d})\n",
+                            .{ token.literal, token.line_number, token.token_number },
+                        );
+                        return error.TypeMismatch;
+                    }
+
+                    _ = type_stack.pop();
+                    _ = type_stack.pop();
+                    try type_stack.append(self.allocator, .{ .base = .bool, .depth = 0 });
+                },
+                .TKN_PLUS, .TKN_MINUS, .TKN_STAR, .TKN_SLASH, .TKN_PERCENT, .TKN_POWER => {
+                    if (type_stack.items.len < 2) {
+                        if (self.source_lines.len > 0) {
+                            self.underlineAt(token.line_number, token.token_number, token.literal.len);
+                        }
+                        Reporting.throwError("Not enough operands for operator {s} (line {d}, token {d})\n", .{ token.literal, token.line_number, token.token_number });
+                        return error.NotEnoughOperands;
+                    }
+
+                    const b = type_stack.items[type_stack.items.len - 1];
+                    const a = type_stack.items[type_stack.items.len - 2];
+                    if (a.depth != 0 or b.depth != 0) {
+                        if (self.source_lines.len > 0) {
+                            self.underlineAt(token.line_number, token.token_number, token.literal.len);
+                        }
+                        Reporting.throwError("Non-numeric value in expression (line {d}, token {d})\n", .{ token.line_number, token.token_number });
+                        return error.TypeMismatch;
+                    }
+
+                    const a_num = a.base == .int or a.base == .float or a.base == .time;
+                    const b_num = b.base == .int or b.base == .float or b.base == .time;
+                    if (!a_num or !b_num) {
+                        if (self.source_lines.len > 0) {
+                            self.underlineAt(token.line_number, token.token_number, token.literal.len);
+                        }
+                        Reporting.throwError("Non-numeric value in expression (line {d}, token {d})\n", .{ token.line_number, token.token_number });
+                        return error.TypeMismatch;
+                    }
+
+                    const out_base: ValueType = if (a.base == .float or b.base == .float) .float else .int;
+                    _ = type_stack.pop();
+                    _ = type_stack.pop();
+                    try type_stack.append(self.allocator, .{ .base = out_base, .depth = 0 });
+                },
+                .TKN_GT, .TKN_LT, .TKN_GTE, .TKN_LTE, .TKN_EQ, .TKN_NEQ => {
+                    if (type_stack.items.len < 2) {
+                        if (self.source_lines.len > 0) {
+                            self.underlineAt(token.line_number, token.token_number, token.literal.len);
+                        }
+                        Reporting.throwError("Not enough operands for operator {s} (line {d}, token {d})\n", .{ token.literal, token.line_number, token.token_number });
+                        return error.NotEnoughOperands;
+                    }
+
+                    const b = type_stack.items[type_stack.items.len - 1];
+                    const a = type_stack.items[type_stack.items.len - 2];
+                    if (a.depth != 0 or b.depth != 0) {
+                        if (self.source_lines.len > 0) {
+                            self.underlineAt(token.line_number, token.token_number, token.literal.len);
+                        }
+                        Reporting.throwError("Comparison not supported for array values (line {d}, token {d})\n", .{ token.line_number, token.token_number });
+                        return error.TypeMismatch;
+                    }
+
+                    const ok = switch (a.base) {
+                        .int => b.base == .int or b.base == .float,
+                        .float => b.base == .int or b.base == .float,
+                        .bool => b.base == .bool and (token.token_type == .TKN_EQ or token.token_type == .TKN_NEQ),
+                        .string => b.base == .string and (token.token_type == .TKN_EQ or token.token_type == .TKN_NEQ),
+                        else => false,
+                    };
+
+                    if (!ok) {
+                        if (self.source_lines.len > 0) {
+                            self.underlineAt(token.line_number, token.token_number, token.literal.len);
+                        }
+                        Reporting.throwError(
+                            "Comparison not supported for type {s} (line {d}, token {d})\n",
+                            .{ a.base.toString(), token.line_number, token.token_number },
+                        );
+                        return error.TypeMismatch;
+                    }
+
+                    _ = type_stack.pop();
+                    _ = type_stack.pop();
+                    try type_stack.append(self.allocator, .{ .base = .bool, .depth = 0 });
+                },
+                else => {},
+            }
+        }
+
+        if (type_stack.items.len != 1) {
+            if (self.source_lines.len > 0 and tokens.len > 0) {
+                const t = tokens[0];
+                self.underlineAt(t.line_number, t.token_number, @max(@as(usize, 1), t.literal.len));
+            }
+            Reporting.throwError(
+                "Invalid expression (line {d}, token {d})\n",
+                .{ tokens[0].line_number, tokens[0].token_number },
+            );
+            return error.InvalidExpression;
+        }
+
+        return type_stack.items[0];
+    }
+
+    fn evaluateIfThenElse(self: *Preprocessor, tokens: []Token) anyerror!Value {
+        const parts = try self.splitIfThenElse(tokens);
+
+        const cond_value = try self.evaluateExpression(parts.condition);
+        if (cond_value != .bool) {
+            if (self.source_lines.len > 0 and parts.condition.len > 0) {
+                const t = parts.condition[0];
+                self.underlineAt(t.line_number, t.token_number, @max(@as(usize, 1), t.literal.len));
+            }
+            Reporting.throwError(
+                "Conditional expression condition must evaluate to bool (line {d}, token {d})\n",
+                .{ parts.if_token.line_number, parts.if_token.token_number },
+            );
+            return error.ConditionalConditionNotBool;
+        }
+
+        // Typecheck both branches (without evaluating them).
+        _ = try self.inferIfThenElseType(tokens);
+
+        // Short-circuit: evaluate exactly one branch.
+        if (cond_value.bool) {
+            return try self.evaluateExpression(parts.then_expr);
+        }
+        return try self.evaluateExpression(parts.else_expr);
+    }
+
+    fn evaluateExpression(self: *Preprocessor, tokens: []Token) anyerror!Value {
+        if (tokens.len == 0) {
+            Reporting.throwError("Empty expression\n", .{});
+            return error.EmptyExpression;
+        }
+
+        if (tokens[0].token_type == .TKN_IF) {
+            return try self.evaluateIfThenElse(tokens);
+        }
+        for (tokens) |t| {
+            if (t.token_type == .TKN_IF or t.token_type == .TKN_THEN or t.token_type == .TKN_ELSE) {
+                if (self.source_lines.len > 0) {
+                    self.underlineAt(t.line_number, t.token_number, @max(@as(usize, 1), t.literal.len));
+                }
+                Reporting.throwError(
+                    "Conditional expressions must be the full expression (expected: if (<cond>) then <expr> else <expr>) (line {d}, token {d})\n",
+                    .{ t.line_number, t.token_number },
+                );
+                return error.ConditionalInCompoundExpression;
+            }
         }
 
         var stack: std.ArrayList(Token) = .empty;
@@ -1675,6 +2199,7 @@ pub const Preprocessor = struct {
                         defer i += 1;
 
                         if (tokens[i + 1].expression) |expression| {
+                            const expr_type = try self.inferExpressionType(expression);
                             const result = try self.evaluateExpression(expression);
 
                             if (assignment.len >= 2) {
@@ -1682,17 +2207,8 @@ pub const Preprocessor = struct {
                                 defer self.allocator.free(modified_assignment);
 
                                 modified_assignment[modified_assignment.len - 1].value = result;
-                                modified_assignment[modified_assignment.len - 1].type = switch (result) {
-                                    .int => .int,
-                                    .float => .float,
-                                    .string => .string,
-                                    .env => .env,
-                                    .bool => .bool,
-                                    .time => .time,
-                                    .array => .nothing,
-                                    .nothing => .nothing,
-                                };
-                                modified_assignment[modified_assignment.len - 1].array_depth = 0;
+                                modified_assignment[modified_assignment.len - 1].type = expr_type.base;
+                                modified_assignment[modified_assignment.len - 1].array_depth = expr_type.depth;
 
                                 try self.assignValue(modified_assignment);
                             } else {
