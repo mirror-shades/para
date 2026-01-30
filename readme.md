@@ -189,7 +189,54 @@ const x: int = 5
 const y: int = x
 ```
 
+## Environment Variables
 
+Environment variables are declared with the `env` type and can be provided at compile time using the `-D` flag. They are stored as strings and are useful for creating dynamic configurations.
+
+### Declaration
+
+Environment variables can be declared with or without an initial value:
+
+```para
+// Uninitialized - requires -D flag at compile time
+const platform: env
+
+// Initialized with a default value
+const platform: env = "linux"
+```
+
+### Compile-Time Definition
+
+Environment variables are provided using the `-DvariableName=value` syntax:
+
+```bash
+para config.para -Dplatform=windows --json
+```
+
+### Behavior
+
+- If an env variable is declared without a value, it must be provided via `-D` flag at compile time, otherwise compilation will error.
+- If an env variable has an initial value, passing a `-D` flag will overwrite the initial value.
+- All env values are stored as strings, regardless of how they're provided.
+
+```para
+// config.para
+const platform: env = "linux"
+const api_key: env
+
+// Compiling with: para config.para -Dplatform=windows -Dapi_key=secret123
+// Results in: platform = "windows" (overwritten), api_key = "secret123"
+```
+
+### Combining with Conditionals
+
+Environment variables can be combined with conditional expressions to create dynamic behavior:
+
+```para
+const environment: env = "development"
+const debug: bool = if (environment == "production") then false else true
+const port: int = if (environment == "production") then 443 else 8080
+```
 
 ## Complex Types
 
