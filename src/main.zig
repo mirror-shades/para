@@ -30,6 +30,9 @@ pub fn main() !void {
     defer arena.deinit();
     const allocator = arena.allocator();
 
+    // Store -D defines for env variables
+    var defines = std.StringHashMap([]const u8).init(allocator);
+
     var args = try std.process.argsWithAllocator(allocator);
     defer args.deinit();
 
@@ -40,7 +43,23 @@ pub fn main() !void {
 
     while (args.next()) |arg| {
         arg_count += 1;
-        if (std.mem.eql(u8, arg, "--debug_lexer")) {
+        if (std.mem.startsWith(u8, arg, "-D")) {
+            // Parse -Dname=value or -Dname="value"
+            const define_part: []const u8 = arg[2..]; // skip "-D"
+            if (std.mem.indexOf(u8, define_part, "=")) |eq_pos| {
+                const name = define_part[0..eq_pos];
+                const raw_value = define_part[eq_pos + 1 ..];
+                // Strip quotes if present
+                const value = if (raw_value.len >= 2 and raw_value[0] == '"' and raw_value[raw_value.len - 1] == '"')
+                    raw_value[1 .. raw_value.len - 1]
+                else
+                    raw_value;
+                try defines.put(name, value);
+            } else {
+                Reporting.throwError("-D requires format -Dname=value\n", .{});
+                return;
+            }
+        } else if (std.mem.eql(u8, arg, "--debug_lexer")) {
             debug_lexer = true;
         } else if (std.mem.eql(u8, arg, "--debug_parser")) {
             debug_parser = true;
@@ -135,6 +154,7 @@ pub fn main() !void {
     defer preprocessor.deinit();
 
     preprocessor.setSourceLines(para_lexer.lines.items);
+    preprocessor.setDefines(defines);
 
     if (debug_preprocessor) {
         Reporting.log("", .{});
@@ -229,6 +249,7 @@ fn printNode(node: *ast.Node, indent: usize, reporter: *Reporting.Reporter) !voi
 fn printUsage(program_name: []const u8) void {
     Reporting.log("Usage: {s} [options] <file>\n", .{program_name});
     Reporting.log("Options:\n", .{});
+    Reporting.log("  -D<name>=<value>     Define an env variable (e.g. -Dplatform=windows)\n", .{});
     Reporting.log("  --debug_lexer        Enable lexer debug output\n", .{});
     Reporting.log("  --debug_parser       Enable parser debug output\n", .{});
     Reporting.log("  --debug_preprocessor Enable preprocessor debug output\n", .{});
@@ -238,7 +259,7 @@ fn printUsage(program_name: []const u8) void {
     Reporting.log("  --yaml               Emit YAML (experimental)\n", .{});
     Reporting.log("  --toml               Emit TOML (experimental)\n", .{});
     Reporting.log("  --ron                Emit RON (experimental)\n", .{});
-    Reporting.log("  --out <path>          Write output to file (use '-' for stdout)\n", .{});
-    Reporting.log("  --stdout              Force stdout output\n", .{});
+    Reporting.log("  --out <path>         Write output to file (use '-' for stdout)\n", .{});
+    Reporting.log("  --stdout             Force stdout output\n", .{});
     std.process.exit(0);
 }

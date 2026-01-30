@@ -1,16 +1,16 @@
-const person.age : int = 50
+const person.age: int = 50
 
 person { 
-    const retirement : int = 50 + 20
+    const retirement: int = 50 + 20
 }
 
 const raise = 500
 const man = "Bob" 
 
-person : int {
+person: int {
     const job.salary = 15000  + raise
-    const job.title : string = "Bartender"
-    const name : string = man
+    const job.title: string = "Bartender"
+    const name: string = man
 }
 
 raise ?

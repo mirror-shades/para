@@ -193,7 +193,7 @@ pub const Lexer = struct {
                 continue;
             }
 
-            if (c == 'i' or c == 's' or c == 'b' or c == 'f' or c == 't' or c == 'T' or c == 'F' or c == 'I' or c == 'S' or c == 'B' or c == 'a' or c == 'o') {
+            if (c == 'i' or c == 's' or c == 'b' or c == 'f' or c == 't' or c == 'e' or c == 'T' or c == 'F' or c == 'I' or c == 'S' or c == 'B' or c == 'E' or c == 'a' or c == 'o') {
                 const current_column = self.column;
                 const word = try self.readWord();
 
@@ -203,11 +203,13 @@ pub const Lexer = struct {
                     (c == 's' and std.mem.eql(u8, word, "string")) or
                     (c == 'b' and std.mem.eql(u8, word, "bool")) or
                     (c == 't' and std.mem.eql(u8, word, "time")) or
+                    (c == 'e' and std.mem.eql(u8, word, "env")) or
                     (c == 'I' and std.mem.eql(u8, word, "INT")) or
                     (c == 'F' and std.mem.eql(u8, word, "FLOAT")) or
                     (c == 'S' and std.mem.eql(u8, word, "STRING")) or
                     (c == 'B' and std.mem.eql(u8, word, "BOOL")) or
-                    (c == 'T' and std.mem.eql(u8, word, "TIME"));
+                    (c == 'T' and std.mem.eql(u8, word, "TIME")) or
+                    (c == 'E' and std.mem.eql(u8, word, "ENV"));
 
                 const is_value_word =
                     (c == 't' and std.mem.eql(u8, word, "true")) or

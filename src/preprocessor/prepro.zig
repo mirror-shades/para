@@ -115,6 +115,8 @@ pub const Preprocessor = struct {
     source_lines: [][]const u8,
     // Stored assertions for dynamic evaluation
     assertions: std.ArrayList(Assertion),
+    // Command-line defines (-Dname=value) for env variables
+    defines: std.StringHashMap([]const u8),
 
     pub fn init(allocator: std.mem.Allocator) !Preprocessor {
         return Preprocessor{
@@ -122,11 +124,16 @@ pub const Preprocessor = struct {
             .root_scope = Scope.init(allocator),
             .source_lines = &[_][]const u8{},
             .assertions = try std.ArrayList(Assertion).initCapacity(allocator, 0),
+            .defines = std.StringHashMap([]const u8).init(allocator),
         };
     }
 
     pub fn setSourceLines(self: *Preprocessor, lines: [][]const u8) void {
         self.source_lines = lines;
+    }
+
+    pub fn setDefines(self: *Preprocessor, defines: std.StringHashMap([]const u8)) void {
+        self.defines = defines;
     }
 
     pub fn deinit(self: *Preprocessor) void {
@@ -135,6 +142,7 @@ pub const Preprocessor = struct {
             assertion.deinit(self.allocator);
         }
         self.assertions.deinit(self.allocator);
+        self.defines.deinit();
     }
 
     pub fn buildIrProgram(self: *Preprocessor) !ir.Program {
@@ -908,7 +916,41 @@ pub const Preprocessor = struct {
         var final_mutable = identifier.mutable;
         var final_temp = identifier.temp;
 
-        // Step 2: Check if variable already exists
+        // Step 2: Handle uninitialized variables (value is .nothing)
+        const value_is_nothing = (value_item.type == .nothing and std.meta.activeTag(value_item.value) == .nothing);
+        if (value_is_nothing and has_explicit_type) {
+            if (declared_type == .env) {
+                // env variables can be uninitialized - look up in defines
+                if (self.defines.get(identifier.name)) |define_value| {
+                    value_item.value = Value{ .env = define_value };
+                    value_item.type = .env;
+                } else {
+                    // Required env variable not provided
+                    if (self.source_lines.len > 0) {
+                        self.underlineAt(identifier.line_number, identifier.token_number, identifier.name.len);
+                    }
+                    Reporting.throwError(
+                        "Required env variable '{s}' not provided. Use -D{s}=<value>\n",
+                        .{ identifier.name, identifier.name },
+                    );
+                    return error.MissingRequiredEnvVariable;
+                }
+            } else {
+                // Non-env types cannot be uninitialized
+                if (self.source_lines.len > 0) {
+                    self.underlineAt(identifier.line_number, identifier.token_number, identifier.name.len);
+                }
+                var type_buf: [64]u8 = undefined;
+                const type_str = formatType(&type_buf, declared_type, declared_array_depth);
+                Reporting.throwError(
+                    "Cannot declare uninitialized variable '{s}' of type {s}. Only env variables can be uninitialized.\n",
+                    .{ identifier.name, type_str },
+                );
+                return error.UninitializedVariable;
+            }
+        }
+
+        // Step 3: Check if variable already exists
         if (target_scope.variables.get(identifier.name)) |existing_var| {
             // Disallow using a declaration prefix (var/const/temp) on an
             // identifier that already exists in this scope.
@@ -972,7 +1014,7 @@ pub const Preprocessor = struct {
                 return error.TypeAnnotationRequired;
             }
 
-            // Step 3: For new variables, handle type checking/inference
+            // Step 4: For new variables, handle type checking/inference
             if (has_explicit_type) {
                 if (!isTypeCompatible(declared_type, declared_array_depth, value_item.type, value_item.array_depth)) {
                     if (self.source_lines.len > 0) {
@@ -1666,6 +1708,54 @@ pub const Preprocessor = struct {
                 .TKN_EXPRESSION => {
                     continue;
                 },
+                .TKN_TYPE => {
+                    // Handle type-only declarations without values (e.g., "var platform: env")
+                    // Only applies when there's an explicit var/const declaration prefix
+                    // Skip typed group definitions like "person : int {" which don't have a decl prefix
+                    const next_is_newline = (i + 1 < tokens.len and tokens[i + 1].token_type == .TKN_NEWLINE);
+                    const next_is_eof = (i + 1 >= tokens.len);
+                    if (next_is_newline or next_is_eof) {
+                        // Look back for the identifier (should be immediately before the type)
+                        if (i >= 1 and tokens[i - 1].token_type == .TKN_IDENTIFIER) {
+                            const id_token = tokens[i - 1];
+                            // Only handle as uninitialized variable if it has var/const prefix
+                            if (!id_token.has_decl_prefix) {
+                                continue;
+                            }
+                            const declared_type = valueTypeFromLiteral(current_token.literal) catch .nothing;
+
+                            // Build assignment array with identifier and empty value
+                            var assignment = try self.allocator.alloc(Variable, 2);
+                            defer self.allocator.free(assignment);
+
+                            assignment[0] = Variable{
+                                .name = id_token.literal,
+                                .value = Value{ .nothing = {} },
+                                .type = declared_type,
+                                .array_depth = 0,
+                                .mutable = id_token.is_mutable,
+                                .temp = id_token.is_temporary,
+                                .has_decl_prefix = id_token.has_decl_prefix,
+                                .line_number = id_token.line_number,
+                                .token_number = id_token.token_number,
+                            };
+                            assignment[1] = Variable{
+                                .name = "value",
+                                .value = Value{ .nothing = {} },
+                                .type = .nothing,
+                                .array_depth = 0,
+                                .mutable = false,
+                                .temp = false,
+                                .has_decl_prefix = false,
+                                .line_number = current_token.line_number,
+                                .token_number = current_token.token_number,
+                            };
+
+                            try self.assignValue(assignment);
+                        }
+                    }
+                    continue;
+                },
                 .TKN_INSPECT => {
                     if (i > 0) {
                         if (i > 0 and tokens[i - 1].token_type == .TKN_VALUE) {
@@ -1965,6 +2055,7 @@ fn valueTypeFromLiteral(lit: []const u8) !ValueType {
     if (std.mem.eql(u8, lit, "string") or std.mem.eql(u8, lit, "STRING")) return .string;
     if (std.mem.eql(u8, lit, "bool") or std.mem.eql(u8, lit, "BOOL")) return .bool;
     if (std.mem.eql(u8, lit, "time") or std.mem.eql(u8, lit, "TIME")) return .time;
+    if (std.mem.eql(u8, lit, "env") or std.mem.eql(u8, lit, "ENV")) return .env;
     return error.UnknownType;
 }
 
